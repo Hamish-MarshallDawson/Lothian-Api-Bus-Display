@@ -1,0 +1,157 @@
+What should this project do?
+
+
+Requirements:
+
+fur1 - Display nearest bus stop department times to Heriot watt
+fur2 - Show how far the bus is from bus stop
+fur3 - Take advantage of lothian bus api 
+fur4 - work on raspberry pi 
+fur5 - have a go rest mode where between the hours of 12pm and 6am as it will not be in use then. (Flexible)
+fur6 - be able to read json data 
+
+
+
+nfr1 - have a wee animation of bus that dynamically changes when bus gets closer
+nfr2 - code should be very efficient and not require a lot of system resources
+nfr3 - should only send update to display when information changes, not constant 
+nfr4 - be programmed primarily in c++ as a good excercise into memory management and another language
+nfr5 - Should be easy to modify and refactor code, (might want to add other features in the future like weather suggestions etc (bring a coat if forecast bad))
+nfr6 - Have ability to monitor program through terminal print outs (So when I ssh into pi I can see if any issues have happened)
+
+
+
+Step-by-Step Development Plan for Lothian Bus Display
+Phase 1: Research & Planning (1-2 days)
+Understand the API
+
+Explore the TFE OpenData API endpoints (https://tfe-opendata.com/api/v1/stops)
+Test API calls using a browser or Postman to understand the JSON structure
+Identify which endpoints provide bus stop times and real-time bus locations
+Document the data format and update frequency
+Identify Your Bus Stop
+
+Find the specific bus stop ID(s) nearest to Heriot-Watt University
+Determine which bus routes you want to track
+Test API calls for your specific stops to see what data you get
+Hardware Requirements
+
+Decide on display type (LCD, e-ink, OLED, HDMI monitor, etc.)
+Research compatible displays for Raspberry Pi
+Consider power consumption for the rest mode feature
+Phase 2: Environment Setup (1 day)
+Raspberry Pi Setup
+
+Install Raspberry Pi OS (Lite or Desktop based on display needs)
+Set up SSH access for remote monitoring
+Configure network connectivity (WiFi/Ethernet)
+Update system packages
+Development Environment
+
+Install C++ compiler (g++)
+Install necessary libraries:
+JSON parsing library (e.g., nlohmann/json or RapidJSON)
+HTTP client library (e.g., libcurl)
+Display driver libraries (depends on your display choice)
+Set up version control (Git)
+Phase 3: Core Development (Breaking into modules)
+Module 1: API Integration
+
+Create a function to make HTTP GET requests to the API
+Parse JSON responses to extract relevant data (departure times, bus locations)
+Handle API errors and network failures gracefully
+Implement logging for API responses
+Module 2: Data Processing
+
+Calculate time until bus departure
+Determine bus distance from stop (if API provides location data)
+Filter and sort buses by relevance (nearest times, specific routes)
+Cache previous data to detect changes (for nfr3)
+Module 3: Display Controller
+
+Initialize display hardware
+Create rendering functions for text (times, distances)
+Implement the bus animation that changes based on proximity
+Design the layout (bus times, distance, animation position)
+Implement update mechanism that only refreshes when data changes
+Module 4: Time-Based Control
+
+Implement current time checking
+Create rest mode (dim/turn off display between 12am-6am)
+Add wake-up and sleep routines
+Consider gradual transitions to save display lifespan
+Module 5: Logging & Monitoring
+
+Implement comprehensive console logging
+Log API calls, errors, and state changes
+Add timestamps to all log entries
+Consider log rotation to prevent disk space issues
+Phase 4: Integration & Optimization (2-3 days)
+Combine Modules
+
+Create main program loop that coordinates all modules
+Set appropriate update intervals (balance freshness vs API load)
+Implement proper error handling and recovery
+Memory Management
+
+Profile memory usage
+Ensure proper cleanup of allocated memory
+Fix any memory leaks
+Use smart pointers where appropriate in C++
+Performance Optimization
+
+Monitor CPU usage
+Optimize update frequency
+Implement efficient data structures
+Minimize unnecessary API calls
+Phase 5: Testing (2-3 days)
+Functional Testing
+
+Test API integration with various network conditions
+Verify display updates correctly
+Test rest mode timing
+Verify bus animation works correctly
+Edge Case Testing
+
+Test with no buses available
+Test with API downtime
+Test with network disconnection/reconnection
+Test overnight rest mode transition
+Long-term Testing
+
+Run for 24+ hours to check stability
+Monitor resource usage over time
+Check for memory leaks
+Verify logging doesn't fill disk space
+Phase 6: Deployment & Documentation (1-2 days)
+Raspberry Pi Deployment
+
+Transfer compiled program to Raspberry Pi
+Set up autostart on boot (systemd service or cron)
+Configure to restart on crash
+Test SSH monitoring capabilities
+Documentation
+
+Document code with clear comments
+Create README with setup instructions
+Document configuration options (stop IDs, sleep times, etc.)
+Note any future enhancement ideas
+Code Organization
+
+Structure code into logical files/classes
+Use header files appropriately
+Follow consistent naming conventions
+Make it easy to add features (weather, etc.) later
+Phase 7: Future Enhancements (Optional)
+Additional Features
+Weather integration
+Multiple bus stop support
+Web interface for configuration
+Historical data/statistics
+Email/notification on specific conditions
+Key Technical Considerations:
+API Polling Rate: Don't poll too frequently (respect API, save bandwidth). Every 30-60 seconds is usually sufficient.
+Error Recovery: Always assume network/API can fail; implement retry logic
+Configuration: Use a config file for stop IDs, routes, times, etc. (not hardcoded)
+Modular Design: Keep each component separate for easier testing and future modifications
+Resource Monitoring: Regularly check CPU, memory, and network usage during development
