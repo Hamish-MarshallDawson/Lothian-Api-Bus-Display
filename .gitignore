@@ -40,4 +40,12 @@
 # debug information files
 *.dwo
 
+#Personal info
+busStopInfo.txt
 
+# example
+*.md
+
+# testing file
+*.html
+*.png

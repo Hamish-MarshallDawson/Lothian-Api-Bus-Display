@@ -1,0 +1,12 @@
+How I found My bus stop
+
+Intially done on my windows machine
+
+$stops = Invoke-RestMethod -Uri "https://tfe-opendata.com/api/v1/stops"
+$stops.stops | Where-Object { $_.name -match "Enter bus stop name here" }
+
+By doing this I was able to find the bus stop near my flat by searching through the responses on the api call.
+
+I then took note of the stop_id
+
+Some bus stops have the same name but go different directions so keep an eye on their final destionations listed
