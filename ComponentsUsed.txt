@@ -1,0 +1,74 @@
+Lothian Bus Display - Hardware Components
+==========================================
+Project: Real-time Bus Display for Lothian bus
+Date: October 2025
+
+COMPONENTS PURCHASED
+====================
+
+1. Raspberry Pi 5 (8GB)
+   URL: https://thepihut.com/products/raspberry-pi-5?variant=53972414431617
+   Purpose: Main computing unit for running the bus display application
+   Specs: 16GB RAM, Quad-core ARM Cortex-A76 processor
+
+
+2. 3.5" IPS Capacitive Touch Display (320 x 480)
+   URL: https://thepihut.com/products/3-5-ips-capacitive-touch-display-320-x-480?variant=53810072256897
+   Purpose: Primary display for showing bus times and information
+   Specs:
+   - Resolution: 320×480 pixels
+   - Touch: Capacitive (multi-touch)
+   - Driver: ST7796S
+   - Touch Controller: FT6336U
+   - Interface: 4-wire SPI (display) + I2C (touch)
+   - Power: ~63mA @ 3.3V
+   - Panel: IPS (excellent viewing angles)
+   - Colors: 262K
+
+
+3. Official Raspberry Pi 5 Case (Black)
+   URL: https://thepihut.com/products/raspberry-pi-5-case?variant=42531604693187
+   Purpose: Protection and cooling for Raspberry Pi 5
+   Features:
+   - Snap-together design
+   - Includes PWM fan and heatsink
+   - GPIO access through removable insert
+   - Power button access
+   - SD card slot access
+   - Ventilated design
+
+
+4. Raspberry Pi 27W USB-C Power Supply
+   URL: https://thepihut.com/products/raspberry-pi-27w-usb-c-power-supply?variant=42531604103363
+   Purpose: Official power supply for Raspberry Pi 5
+   Specs:
+   - Output: 5.1V / 5A (27W)
+   - USB-C connector
+   - UK plug
+
+
+5. MicroSD Card Storage
+   URL: https://www.amazon.co.uk/gp/product/B0CZKZ8Q66/ref=ox_sc_act_title_3?smid=ARSIO1NIDKE2L&psc=1
+   Purpose: Operating system and application storage
+   Note: Verify capacity and speed class when received
+
+
+
+Obviously might be different once using in person but think this is how I connect it all
+
+CONNECTION SETUP
+
+Display to Pi:
+- VCC → 3.3V
+- GND → GND  
+- MISO → GPIO 9
+- MOSI → GPIO 10
+- SCLK → GPIO 11
+- LCD_CS → GPIO 8
+- LCD_DC → GPIO 25
+- LCD_RST → GPIO 27
+- LCD_BL → GPIO 18
+- TP_SDA → GPIO 2
+- TP_SCL → GPIO 3
+- TP_INT → GPIO 4
+- TP_RST → GPIO 17
