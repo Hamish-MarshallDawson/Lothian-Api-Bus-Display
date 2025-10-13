@@ -1,10 +1,10 @@
 Lothian Bus Display - Hardware Components
-==========================================
+------------------------------------------
 Project: Real-time Bus Display for Lothian bus
 Date: October 2025
 
 COMPONENTS PURCHASED
-====================
+--------------------
 
 1. Raspberry Pi 5 (8GB)
    URL: https://thepihut.com/products/raspberry-pi-5?variant=53972414431617
