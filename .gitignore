@@ -40,4 +40,29 @@
 # debug information files
 *.dwo
 
+#Personal info 
+busStopInfo.txt
+busStopInfo.local
+busStopInfo.cpp
+config/*.txt
+*.key
+api_keys.txt
+secrets.txt
+.env
+.env.local
+example.md
+*.html
+
+# Build directories
+build/
+bin/
+obj/
+
+# IDE files
+.vscode/settings.json
+.vscode/launch.json
+*.swp
+*.swo
+*~
+*.png
 
