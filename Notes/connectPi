@@ -1,0 +1,7 @@
+To connect to pi over ssh do the following:
+
+press f1
+then type remote connect to host
+then it will ask for which host, select hamBerryPi
+Then enter password
+then you are in ssh terminal for raspberry pi
