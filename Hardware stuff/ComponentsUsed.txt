@@ -6,7 +6,7 @@ Date: October 2025
 COMPONENTS PURCHASED
 --------------------
 
-1. Raspberry Pi 5 (8GB)
+1. Raspberry Pi 5 (8GB)x
    URL: https://thepihut.com/products/raspberry-pi-5?variant=53972414431617
    Purpose: Main computing unit for running the bus display application
    Specs: 16GB RAM, Quad-core ARM Cortex-A76 processor
