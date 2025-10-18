@@ -72,3 +72,11 @@ Display to Pi:
 - TP_SCL → GPIO 3
 - TP_INT → GPIO 4
 - TP_RST → GPIO 17
+
+
+
+Packages I installed:
+
+sudo apt-get install libcurl4-openssl-dev
+
+sudo apt-get install nlohmann-json3-dev
