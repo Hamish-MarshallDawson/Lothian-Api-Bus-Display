@@ -177,10 +177,19 @@ void drawBusInfo(const std::string& routeNum, const std::string& destination,
     }
 }
 
+
 int main() {
-    // Intro message on terminal
     std::cout << "Lothian Bus Display Starting" << std::endl;
     
+    // Get all bus stops from the private config file
+    std::vector<BusStopInfo> busStops = getAllBusStops();
+    // Track which stop is selected
+    int currentBusStopIndex = 0;
+    
+    std::cout << "Loaded " << busStops.size() << " bus stops" << std::endl;
+    // std::cout << "Current stop: " << busStops[currentBusStopIndex].stopName << std::endl;
+    
+
     // Start display
     if(DEV_ModuleInit() != 0) {
         std::cerr << "Failed to initialize display" << std::endl;
@@ -229,19 +238,21 @@ int main() {
     displayBuffer(BlackImage);
     DEV_Delay_ms(1000);
 
-    // Create bus stop instance
-    BusStopInfo busStop;
     
    // std::cout << "Bus stop: " << busStop.stopName << " (ID: " << busStop.stopID << ")" << std::endl;
-    
+
+   //decides whether to show dropdown menu
+   bool showDropDownMenu = false;
     // Main loop
     while(true) {
-       // std::cout << "\n=== Fetching bus data ===" << std::endl;
-        
-        // Fetch bus data using func defined above
-        std::string apiResponse = fetchLiveBusTimes(busStop.stopID);
 
-        // std::string apiResponse = fetchLiveBusTimes(busStop.stopName);
+        if(!showDropDownMenu) {
+            // std::cout << "\n=== Fetching bus data ===" << std::endl;
+
+            // Fetch bus data using func defined above
+            std::string apiResponse = fetchLiveBusTimes(busStops[currentBusStopIndex].stopID);
+
+             // std::string apiResponse = fetchLiveBusTimes(busStop.stopName);
         
         if(!apiResponse.empty()) {
            // std::cout << "API response received (" << apiResponse.length() << " bytes), parsing..." << std::endl;
@@ -287,12 +298,12 @@ int main() {
 
                 // Draw header - adjust X coordinates for mirroring
                 std::cout << "Drawing header..." << std::endl;
-                Paint_DrawString_EN(30, yPos+=20, busStop.stopName.c_str(), &Font20, BLACK, WHITE);
+                Paint_DrawString_EN(30, yPos+=20, busStops[currentBusStopIndex].stopName.c_str(), &Font20, BLACK, WHITE);
 
 
 
                 //need to make this say Route to then destination
-                Paint_DrawString_EN(100, yPos+20, busStop.destination.c_str(), &Font12, GRAY, BLACK);
+                Paint_DrawString_EN(100, yPos+20, busStops[currentBusStopIndex].destination.c_str(), &Font12, GRAY, BLACK);
                 
 
                 yPos += 40;                
@@ -473,7 +484,27 @@ int main() {
             st7796_clear(BLACK);
             Paint_DrawString_EN(10, 200, "No Data", &Font24, RED, BLACK);
         }
+        }
+
+            // If menu should be shown, draw it on top
+        if(showDropDownMenu) {
+            // Clear and redraw with menu
+            Paint_Clear(GRAY);
         
+            // Draw menu items
+            for(int i = 0; i < busStops.size(); i++) {
+                int itemY = 50 + (i * 50);
+                
+                UWORD bgColor = (i == currentBusStopIndex) ? BLUE : BLACK;
+                Paint_DrawRectangle(10, itemY, ST7796_WIDTH - 10, itemY + 45,
+                                bgColor, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+                
+                Paint_DrawString_EN(20, itemY + 12, 
+                                busStops[i].stopName.c_str(), 
+                                &Font16, WHITE, bgColor);
+                                displayBuffer(BlackImage);
+                }
+        }
         // Wait 60 seconds before next update, but check for touch input during the wait
         std::cout << "Waiting 60 seconds before next update (touch screen to refresh now)..." << std::endl;
         
@@ -484,12 +515,31 @@ int main() {
                 int touchX = touch_data.coords[0].x;
                 int touchY = touch_data.coords[0].y;
                 
-                std::cout << "Touch detected at (" << touchX << ", " << touchY << ") - refreshing now!" << std::endl;
-                forceRefresh = true;
 
+                // used for debugging touch input
+                // std::cout << "Touch detected at (" << touchX << ", " << touchY << ") - refreshing now!" << std::endl;
+                // forceRefresh = true;
+
+                // displays dropwdown menu and prints to console
                 if(touchY<50)
                 {
-                    std::cout << "Dropdown touched" << std::endl;
+                        std::cout << "Dropdown touched" << std::endl;
+                        showDropDownMenu = !showDropDownMenu;  // Toggle menu on/off
+                        forceRefresh = true;  // Force a redraw
+                        // DON'T break here if you want to immediately show the menu
+                        // Instead, you need to trigger a display update
+                    }
+                    else if(showDropDownMenu && touchY >= 50) {
+                        // Calculate which menu item was touched
+                        // Each item is 50 pixels tall, starting at Y=50
+                        int selectedIndex = (touchY - 50) / 50;
+                        
+                        if(selectedIndex >= 0 && selectedIndex < busStops.size()) {
+                            std::cout << "Selected stop index: " << selectedIndex << std::endl;
+                            currentBusStopIndex = selectedIndex;
+                            showDropDownMenu = false;  // Close menu
+                            forceRefresh = true;
+                        }
                 }
                 
                 // Small delay to debounce the touch
@@ -509,3 +559,6 @@ int main() {
     DEV_ModuleExit();
     return 0;
 }
+
+
+
