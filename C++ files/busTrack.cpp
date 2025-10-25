@@ -9,6 +9,7 @@ extern "C" {
     #include "../C/lib/lcd/st7796.h"
     #include "../C/lib/GUI/GUI_Paint.h"
     #include "../C/lib/Fonts/fonts.h"
+    #include "../C/lib/lcd/ft6336u.h"
 }
 
 #include <iostream>
@@ -192,6 +193,10 @@ int main() {
     //intialize display
     st7796_init();
     st7796_clear(BLACK);
+    //initialize touch display
+    ft6336u_init();
+
+    touch_data_t touch_data;
     
     // Initialize Paint library with image buffer
     // Display is 320x480, allocate memory for it
@@ -222,7 +227,7 @@ int main() {
     Paint_DrawString_EN(70, 200, "Bus Tracker", &Font24, WHITE, WHITE);
     Paint_DrawString_EN(70, 230, "Starting...", &Font20, WHITE, WHITE);
     displayBuffer(BlackImage);
-    DEV_Delay_ms(2000);
+    DEV_Delay_ms(1000);
 
     // Create bus stop instance
     BusStopInfo busStop;
@@ -235,6 +240,8 @@ int main() {
         
         // Fetch bus data using func defined above
         std::string apiResponse = fetchLiveBusTimes(busStop.stopID);
+
+        // std::string apiResponse = fetchLiveBusTimes(busStop.stopName);
         
         if(!apiResponse.empty()) {
            // std::cout << "API response received (" << apiResponse.length() << " bytes), parsing..." << std::endl;
@@ -267,11 +274,23 @@ int main() {
                 //yPosition for all elements
                 //basically acts like a container, changing this value moves everything up or down screen
                 //lower value up, higher value down
-                int yPos = 30;
+                int yPos = 20;
+
+                // Burger menu dropdown - draw chevron down arrow
+                // Draw a simple down arrow using lines (coordinates adjusted for MIRROR_HORIZONTAL)
+                Paint_DrawLine(145, yPos, 160, yPos + 15, WHITE, DOT_PIXEL_4X4, LINE_STYLE_SOLID);  // Left diagonal
+                Paint_DrawLine(160, yPos + 15, 175, yPos, WHITE, DOT_PIXEL_4X4, LINE_STYLE_SOLID);  // Right diagonal
+
+                yPos += 30;
+                Paint_DrawString_EN(5, yPos, "------------------", &Font24, WHITE, WHITE);
+                
 
                 // Draw header - adjust X coordinates for mirroring
                 std::cout << "Drawing header..." << std::endl;
-                Paint_DrawString_EN(30, yPos, busStop.stopName.c_str(), &Font20, BLACK, WHITE);
+                Paint_DrawString_EN(30, yPos+=20, busStop.stopName.c_str(), &Font20, BLACK, WHITE);
+
+
+
                 //need to make this say Route to then destination
                 Paint_DrawString_EN(100, yPos+20, busStop.destination.c_str(), &Font12, GRAY, BLACK);
                 
@@ -371,7 +390,7 @@ int main() {
                 // Step 3: Display the first 5 buses
                 yPos= yPos + 60;
                 //change this value for more or less busses
-                int maxBuses = 3;
+                int maxBuses = 4;
                 int busCount = 0;
                 
                 for(const auto& bus : allDepartures) {
@@ -455,9 +474,34 @@ int main() {
             Paint_DrawString_EN(10, 200, "No Data", &Font24, RED, BLACK);
         }
         
-        // Wait 60 seconds before next update
-        std::cout << "Waiting 60 seconds before next update..." << std::endl;
-        DEV_Delay_ms(60000);
+        // Wait 60 seconds before next update, but check for touch input during the wait
+        std::cout << "Waiting 60 seconds before next update (touch screen to refresh now)..." << std::endl;
+        
+        // Poll for 60 seconds in small increments to allow touch detection
+        bool forceRefresh = false;
+        for(int i = 0; i < 600; i++) {  // 600 iterations * 100ms = 60 seconds
+            if (get_touch_data(&touch_data)) {
+                int touchX = touch_data.coords[0].x;
+                int touchY = touch_data.coords[0].y;
+                
+                std::cout << "Touch detected at (" << touchX << ", " << touchY << ") - refreshing now!" << std::endl;
+                forceRefresh = true;
+
+                if(touchY<50)
+                {
+                    std::cout << "Dropdown touched" << std::endl;
+                }
+                
+                // Small delay to debounce the touch
+                DEV_Delay_ms(500);
+                break;  // Exit the wait loop and refresh immediately
+            }
+            DEV_Delay_ms(100);  // Check every 100ms
+        }
+        
+        if(forceRefresh) {
+            std::cout << "Manual refresh triggered by touch" << std::endl;
+        }
     }
     
     // Cleanup
