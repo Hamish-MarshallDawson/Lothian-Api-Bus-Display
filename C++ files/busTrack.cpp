@@ -33,9 +33,11 @@ extern "C" {
 //making it easier to use nlohmann json library
 using json = nlohmann::json;
 
-// Include the bus stop data from busStopInfo.cpp
-#include "busStopInfo.cpp"  
-// file kept private to keep data and API key from public :)
+// Use shared headers for stop info and lookup
+#include "busStopInfo.h"
+#include "config.h"
+#include "openmappull.h"
+
 
 // Forward declaration of st7796 functions from C library
 extern "C" {
@@ -99,9 +101,10 @@ std::string fetchLiveBusTimes(const std::string& stopID){
     //works like bool, if curl initialized properly
     if(curl) {
 
-        BusAPIConfig apiConf;
+        // Use the global API config
+        BusAPIConfig &apiConf = API_CONFIG();
 
-        //gets live bus time from func above
+        // build URL for live times
         std::string url = buildAPIUrl(apiConf, apiConf.liveBusTimesEndpoint, stopID);
 
         //tells curl what url to use 
@@ -112,7 +115,8 @@ std::string fetchLiveBusTimes(const std::string& stopID){
         // stores the data in response string
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
 
-        // actually does the call
+    // set user agent and actually do the call
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, USER_AGENT().c_str());
         res = curl_easy_perform(curl);
 
         // error checking
@@ -180,12 +184,39 @@ void drawBusInfo(const std::string& routeNum, const std::string& destination,
 
 int main() {
     std::cout << "Lothian Bus Display Starting" << std::endl;
-    
-    // Get all bus stops from the private config file
-    std::vector<BusStopInfo> busStops = getAllBusStops();
-    // Track which stop is selected
+    // dynamic stops returned by openmappull -> now use BusStopInfo
+    std::vector<BusStopInfo> dynStops;
+    bool haveDynamicStops = false;
+
+    // Option A: use CONFIG_ADDRESS() and CONFIG_NUM_STOPS()
+    std::string address = CONFIG_ADDRESS();
+    int wanted = CONFIG_NUM_STOPS();
+
+    if(!address.empty()) {
+        std::cout << "Fetching nearest stops for address: " << address << std::endl;
+        if(getNearestStops(address, wanted, dynStops) && !dynStops.empty()) {
+            haveDynamicStops = true;
+            std::cout << "Got " << dynStops.size() << " dynamic stops\n";
+        } else {
+            std::cerr << "Failed to fetch dynamic stops, falling back to static list\n";
+        }
+    } else {
+        std::cerr << "No address in config; not fetching dynamic stops\n";
+    }
+
+    // Convert dynStops to the BusStopInfo / local struct busTrack expects,
+    // or change busTrack to use BusStop (preferred).
+    std::vector<BusStopInfo> busStops;
+    if(haveDynamicStops) {
+        busStops = dynStops; // already BusStopInfo
+    } else {
+        // Fallback to built-in static stops
+        busStops = getAllBusStops();
+    }
+
+    // Index of current stop shown on screen
     int currentBusStopIndex = 0;
-    
+
     std::cout << "Loaded " << busStops.size() << " bus stops" << std::endl;
     // std::cout << "Current stop: " << busStops[currentBusStopIndex].stopName << std::endl;
     
@@ -287,7 +318,7 @@ int main() {
                 //lower value up, higher value down
                 int yPos = 20;
 
-                // Burger menu dropdown - draw chevron down arrow
+                
                 // Draw a simple down arrow using lines (coordinates adjusted for MIRROR_HORIZONTAL)
                 Paint_DrawLine(145, yPos, 160, yPos + 15, WHITE, DOT_PIXEL_4X4, LINE_STYLE_SOLID);  // Left diagonal
                 Paint_DrawLine(160, yPos + 15, 175, yPos, WHITE, DOT_PIXEL_4X4, LINE_STYLE_SOLID);  // Right diagonal
@@ -454,7 +485,20 @@ int main() {
                     }
                     
                     // Time (right side)
-                    Paint_DrawString_EN(160, yPos + 4, bus.time.c_str(), &Font48, WHITE, WHITE);
+                    // Calculate minutes until bus arrives
+                    int minutesUntilBus = bus.minutesSinceMidnight - currentMinutes;
+                    
+                    // Handle midnight wraparound
+                    if(minutesUntilBus < 0) {
+                        minutesUntilBus += 1440;  // Add 24 hours in minutes
+                    }
+                    
+                    // Display "DUE" if bus is arriving in 2 minutes or less
+                    if(minutesUntilBus <= 2 && minutesUntilBus >= 0) {
+                        Paint_DrawString_EN(180, yPos + 4, "DUE...", &Font48, RED, WHITE);
+                    } else {
+                        Paint_DrawString_EN(160, yPos + 4, bus.time.c_str(), &Font48, WHITE, WHITE);
+                    }
                     
                     //moves down for next line
                     yPos += 50;
@@ -495,18 +539,18 @@ int main() {
             for(int i = 0; i < busStops.size(); i++) {
                 int itemY = 50 + (i * 50);
                 
-                UWORD bgColor = (i == currentBusStopIndex) ? BLUE : BLACK;
-                Paint_DrawRectangle(10, itemY, ST7796_WIDTH - 10, itemY + 45,
-                                bgColor, DOT_PIXEL_1X1, DRAW_FILL_FULL);
+                UWORD bgColor = (i == currentBusStopIndex) ? BLUE : WHITE;
+                // Paint_DrawRectangle(10, itemY, ST7796_WIDTH - 10, itemY + 45,
+                                // bgColor, DOT_PIXEL_1X1, DRAW_FILL_FULL);
                 
                 Paint_DrawString_EN(20, itemY + 12, 
                                 busStops[i].stopName.c_str(), 
-                                &Font16, WHITE, bgColor);
+                                &Font16, BLACK, bgColor);
                                 displayBuffer(BlackImage);
                 }
         }
         // Wait 60 seconds before next update, but check for touch input during the wait
-        std::cout << "Waiting 60 seconds before next update (touch screen to refresh now)..." << std::endl;
+        std::cout << "Waiting 60 seconds before next update" << std::endl;
         
         // Poll for 60 seconds in small increments to allow touch detection
         bool forceRefresh = false;
@@ -549,9 +593,7 @@ int main() {
             DEV_Delay_ms(100);  // Check every 100ms
         }
         
-        if(forceRefresh) {
-            std::cout << "Manual refresh triggered by touch" << std::endl;
-        }
+      
     }
     
     // Cleanup
