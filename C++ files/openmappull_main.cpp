@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
     }
 
     if(address.empty()) {
-        std::cerr << "Address is empty (set 'address=' in config.txt or pass an address on the CLI)\n";
+        std::cerr << "Address is empty (set 'address=' in config.h or pass an address on the CLI)\n";
         curl_global_cleanup();
         return 3;
     }
