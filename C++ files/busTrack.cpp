@@ -35,8 +35,16 @@ using json = nlohmann::json;
 
 // Use shared headers for stop info and lookup
 #include "busStopInfo.h"
-#include "config.h"
-#include "openmappull.h"
+#include "openmappull.h"    // for GroupedStops, getNearestStopsGrouped
+#include "config.h"         // access to CONFIG_ADDRESS(), CITY_CENTER_LAT/LON if needed
+
+// UI state for grouped dropdown
+enum class DirectionChoice { None, IntoCity, OutOfCity };
+static DirectionChoice g_dirChoice = DirectionChoice::None;
+static GroupedStops g_groupedStops;
+static std::vector<BusStopInfo> g_dropdownStops; // currently-visible dropdown rows after choosing direction
+static bool g_showDirectionModal = false;        // true when first asking Into/Out
+static std::string g_selectedStopID;             // if non-empty, overrides busStops[currentBusStopIndex].stopID for API calls
 
 
 // Forward declaration of st7796 functions from C library
@@ -181,6 +189,42 @@ void drawBusInfo(const std::string& routeNum, const std::string& destination,
     }
 }
 
+void drawDirectionChoiceModal() {
+    // simple centered panel
+    int x0 = 40, x1 = 280;
+    // Use fixed Y positions so touch hitboxes are unambiguous
+    int btn_w = x1 - x0 - 20;
+    int btn_x = x0 + 10;
+    const int into_y = 60;   // top button Y (user requested)
+    const int out_y = 300;   // bottom button Y (user requested)
+    const int btn_h = 36;
+
+    // Draw outlines for clarity
+    Paint_DrawRectangle(btn_x, into_y, btn_x + btn_w, into_y + btn_h, BLACK, DOT_PIXEL_2X2, DRAW_FILL_EMPTY);
+    Paint_DrawRectangle(btn_x, out_y, btn_x + btn_w, out_y + btn_h, BLACK, DOT_PIXEL_2X2, DRAW_FILL_EMPTY);
+
+    // Labels
+    Paint_DrawString_EN(btn_x + 12, into_y + 8, "Into city", &Font16, FONT_BACKGROUND, FONT_FOREGROUND);
+    Paint_DrawString_EN(btn_x + 12, out_y + 8, "Out of city", &Font16, FONT_BACKGROUND, FONT_FOREGROUND);
+    // optional: small subtitle
+    Paint_DrawString_EN(x0 + 10, into_y - 18, "Choose direction", &Font12, FONT_BACKGROUND, FONT_FOREGROUND);
+}
+
+
+void drawDropdownFromGrouped() {
+    // basic top-down list drawing; reuse your existing row drawing code
+    int rowY = 20;
+    int rowH = 34;
+    for (size_t i = 0; i < g_dropdownStops.size(); ++i) {
+        int y = rowY + i * rowH;
+        // background highlight for selected row could be added
+        // Paint_DrawRectangle(10, y, 300, y + rowH - 4, DRAW_FILL_EMPTY, LINE_STYLE_SOLID, DOT_PIXEL_2X2);
+        std::string name = g_dropdownStops[i].stopName;
+        // trim if too long - reuse your existing text truncation helper
+        Paint_DrawString_EN(16, y + 6, name.c_str(), &Font16, FONT_BACKGROUND, FONT_FOREGROUND);
+    }
+}
+
 
 int main() {
     std::cout << "Lothian Bus Display Starting" << std::endl;
@@ -216,6 +260,20 @@ int main() {
 
     // Index of current stop shown on screen
     int currentBusStopIndex = 0;
+
+    // Choose the nearest stop at startup (preferred behavior)
+    {
+        std::vector<BusStopInfo> nearest;
+        if (getNearestStops(CONFIG_ADDRESS(), 1, nearest) && !nearest.empty()) {
+            g_selectedStopID = nearest.front().stopID;
+            for (size_t i = 0; i < busStops.size(); ++i) {
+                if (busStops[i].stopID == g_selectedStopID) {
+                    currentBusStopIndex = i;
+                    break;
+                }
+            }
+        }
+    }
 
     std::cout << "Loaded " << busStops.size() << " bus stops" << std::endl;
     // std::cout << "Current stop: " << busStops[currentBusStopIndex].stopName << std::endl;
@@ -301,7 +359,7 @@ int main() {
                 // std::cout << "Clearing screen and drawing header" << std::endl;
                 
                 // Clear Paint buffer (not the physical screen)
-                //this also sets background colour
+                //thisalso sets background colour
                 Paint_Clear(GRAY);
                 
 
@@ -494,7 +552,7 @@ int main() {
                     }
                     
                     // Display "DUE" if bus is arriving in 2 minutes or less
-                    if(minutesUntilBus <= 2 && minutesUntilBus >= 0) {
+                    if(minutesUntilBus <= 2 && minutesUntilBus >= -2) {
                         Paint_DrawString_EN(180, yPos + 4, "DUE...", &Font48, RED, WHITE);
                     } else {
                         Paint_DrawString_EN(160, yPos + 4, bus.time.c_str(), &Font48, WHITE, WHITE);
@@ -534,26 +592,48 @@ int main() {
         if(showDropDownMenu) {
             // Clear and redraw with menu
             Paint_Clear(GRAY);
-        
-            // Draw menu items
-            for(int i = 0; i < busStops.size(); i++) {
-                int itemY = 50 + (i * 50);
-                
-                UWORD bgColor = (i == currentBusStopIndex) ? BLUE : WHITE;
-                // Paint_DrawRectangle(10, itemY, ST7796_WIDTH - 10, itemY + 45,
-                                // bgColor, DOT_PIXEL_1X1, DRAW_FILL_FULL);
-                
-                Paint_DrawString_EN(20, itemY + 12, 
-                                busStops[i].stopName.c_str(), 
-                                &Font16, BLACK, bgColor);
-                                displayBuffer(BlackImage);
+
+            // Compute how many rows fit on screen (start Y=50, row height=50)
+            const int rowY0 = 50;
+            const int rowH = 50;
+            size_t maxRows = busStops.size();
+            if (ST7796_HEIGHT > rowY0) {
+                size_t fit = (ST7796_HEIGHT - rowY0) / rowH;
+                if (fit < maxRows) maxRows = fit;
+            } else {
+                maxRows = 0;
+            }
+
+            // If a direction modal is requested, show that instead of the list
+            if (g_showDirectionModal) {
+                drawDirectionChoiceModal();
+                displayBuffer(BlackImage);
+            } else {
+                // Draw menu items (limited to what fits)
+                bool usingGrouped = !g_dropdownStops.empty();
+                size_t sourceSize = usingGrouped ? g_dropdownStops.size() : busStops.size();
+                size_t rowsToDraw = std::min(maxRows, sourceSize);
+
+                if (rowsToDraw == 0) {
+                    Paint_DrawString_EN(20, rowY0 + 4, "No stops found", &Font16, RED, GRAY);
+                } else {
+                    for(size_t i = 0; i < rowsToDraw; i++) {
+                        int itemY = rowY0 + (i * rowH);
+                        const std::string &name = usingGrouped ? g_dropdownStops[i].stopName : busStops[i].stopName;
+
+                        UWORD bgColor = (static_cast<size_t>(currentBusStopIndex) == i && !usingGrouped) ? BLUE : WHITE;
+                        Paint_DrawString_EN(20, itemY + 12,
+                                            name.c_str(),
+                                            &Font16, BLACK, bgColor);
+                    }
                 }
+                displayBuffer(BlackImage);
+            }
         }
         // Wait 60 seconds before next update, but check for touch input during the wait
         std::cout << "Waiting 60 seconds before next update" << std::endl;
         
-        // Poll for 60 seconds in small increments to allow touch detection
-        bool forceRefresh = false;
+    // Poll for 60 seconds in small increments to allow touch detection
         for(int i = 0; i < 600; i++) {  // 600 iterations * 100ms = 60 seconds
             if (get_touch_data(&touch_data)) {
                 int touchX = touch_data.coords[0].x;
@@ -564,26 +644,88 @@ int main() {
                 // std::cout << "Touch detected at (" << touchX << ", " << touchY << ") - refreshing now!" << std::endl;
                 // forceRefresh = true;
 
-                // displays dropwdown menu and prints to console
-                if(touchY<50)
-                {
-                        std::cout << "Dropdown touched" << std::endl;
-                        showDropDownMenu = !showDropDownMenu;  // Toggle menu on/off
-                        forceRefresh = true;  // Force a redraw
-                        // DON'T break here if you want to immediately show the menu
-                        // Instead, you need to trigger a display update
+                // If the user tapped the top area, open the dropdown + direction modal
+                if (touchY < 50) {
+                    std::cout << "Dropdown touched" << std::endl;
+                    // show the dropdown UI and ask for direction first
+                    g_showDirectionModal = true;
+                    g_dirChoice = DirectionChoice::None;
+                    g_groupedStops.intoCity.clear();
+                    g_groupedStops.outOfCity.clear();
+                    g_dropdownStops.clear();
+                    showDropDownMenu = true;
+                    // debounce slightly and refresh immediately
+                    DEV_Delay_ms(250);
+                    break;
+                }
+
+                // If the direction modal is visible, handle taps on its buttons
+                if (g_showDirectionModal) {
+                    // Modal layout uses fixed Y positions: into_y=60, out_y=300
+                    int x0 = 40, x1 = 280;
+                    int btn_x = x0 + 10;
+                    int btn_w = x1 - x0 - 20;
+                    const int into_y = 60;
+                    const int out_y = 300;
+                    const int btn_h = 36;
+
+                    // Into city button hit test
+                    if (touchX >= btn_x && touchX <= btn_x + btn_w && touchY >= into_y && touchY <= into_y + btn_h) {
+                        g_dirChoice = DirectionChoice::IntoCity;
                     }
-                    else if(showDropDownMenu && touchY >= 50) {
-                        // Calculate which menu item was touched
-                        // Each item is 50 pixels tall, starting at Y=50
-                        int selectedIndex = (touchY - 50) / 50;
-                        
-                        if(selectedIndex >= 0 && selectedIndex < busStops.size()) {
-                            std::cout << "Selected stop index: " << selectedIndex << std::endl;
-                            currentBusStopIndex = selectedIndex;
-                            showDropDownMenu = false;  // Close menu
-                            forceRefresh = true;
+                    // Out of city button hit test
+                    else if (touchX >= btn_x && touchX <= btn_x + btn_w && touchY >= out_y && touchY <= out_y + btn_h) {
+                        g_dirChoice = DirectionChoice::OutOfCity;
+                    }
+
+                    if (g_dirChoice != DirectionChoice::None) {
+                        // Fetch grouped stops for the chosen direction
+                        int perGroup = CONFIG_NUM_STOPS();
+                        std::cerr << "Direction chosen: " << (g_dirChoice == DirectionChoice::IntoCity ? "IntoCity" : "OutOfCity") << std::endl;
+                        bool ok = getNearestStopsGrouped(CONFIG_ADDRESS(), perGroup, g_groupedStops);
+                        if (!ok) {
+                            // fallback: use nearest stops
+                            std::vector<BusStopInfo> fallback;
+                            if (getNearestStops(CONFIG_ADDRESS(), perGroup, fallback)) {
+                                g_dropdownStops = fallback;
+                            } else {
+                                g_dropdownStops.clear();
+                            }
+                            std::cerr << "getNearestStopsGrouped failed, using fallback size=" << g_dropdownStops.size() << std::endl;
+                        } else {
+                            if (g_dirChoice == DirectionChoice::IntoCity) g_dropdownStops = g_groupedStops.intoCity;
+                            else g_dropdownStops = g_groupedStops.outOfCity;
+                            std::cerr << "Grouped sizes -> into=" << g_groupedStops.intoCity.size() << " out=" << g_groupedStops.outOfCity.size() << std::endl;
                         }
+
+                        g_showDirectionModal = false;
+                        showDropDownMenu = true;
+                    }
+                }
+                // If dropdown is visible, handle row selection (either grouped or static)
+                else if (showDropDownMenu && touchY >= 50) {
+                    int rowY0 = 50;
+                    int rowH = 50;
+                    int selectedIndex = (touchY - rowY0) / rowH;
+
+                    // Determine which source we're selecting from
+                    bool usingGrouped = !g_dropdownStops.empty();
+                    size_t sourceSize = usingGrouped ? g_dropdownStops.size() : busStops.size();
+
+                    if (selectedIndex >= 0 && static_cast<size_t>(selectedIndex) < sourceSize) {
+                        std::cout << "Selected stop index: " << selectedIndex << std::endl;
+                        BusStopInfo chosen = usingGrouped ? g_dropdownStops[selectedIndex] : busStops[selectedIndex];
+                        // set selected stop ID and update current index if possible
+                        g_selectedStopID = chosen.stopID;
+                        for (size_t i = 0; i < busStops.size(); ++i) {
+                            if (busStops[i].stopID == g_selectedStopID) {
+                                currentBusStopIndex = i;
+                                break;
+                            }
+                        }
+                        showDropDownMenu = false; // close menu
+                        g_dropdownStops.clear();
+                    }
                 }
                 
                 // Small delay to debounce the touch
@@ -602,5 +744,8 @@ int main() {
     return 0;
 }
 
+// End of program
+    // (no further top-level code)
 
 
+    // no further actions
