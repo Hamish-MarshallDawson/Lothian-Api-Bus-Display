@@ -318,8 +318,8 @@ void drawMainScreen(UWORD *image, const BusStopInfo &currentStop, const json &bu
     int maxBuses = std::max(1, availableHeight / BUS_ROW_HEIGHT);
     maxBuses = std::min(maxBuses, static_cast<int>(allDepartures.size()));
 
-    std::cout << "busListStartY: " << busListStartY << ", availableHeight: " << availableHeight 
-              << ", maxBuses: " << maxBuses << std::endl;
+    // std::cout << "busListStartY: " << busListStartY << ", availableHeight: " << availableHeight 
+    //           << ", maxBuses: " << maxBuses << std::endl;
 
     // If no buses available, display message
     if (allDepartures.empty()) {

@@ -12,6 +12,8 @@ extern "C" {
     #include "../C/lib/lcd/ft6336u.h"
 }
 
+
+
 #include <iostream>
 #include <string>      
 // For storing multiple bus stops/services  
@@ -40,6 +42,24 @@ using json = nlohmann::json;
 
 // Display API and shared UI state (implemented in renderDisplay.cpp)
 #include "renderDisplay.h"
+
+#include <wiringPi.h>
+
+const int BACKLIGHT_PIN = 18; // BCM 18 from ComponentsUsed.txt
+
+void backlight_init() {
+    wiringPiSetupGpio();           // use BCM numbering
+    pinMode(BACKLIGHT_PIN, OUTPUT);
+    digitalWrite(BACKLIGHT_PIN, HIGH); // backlight on at start
+}
+
+void backlight_on() {
+    digitalWrite(BACKLIGHT_PIN, HIGH);
+}
+
+void backlight_off() {
+    digitalWrite(BACKLIGHT_PIN, LOW);
+}
 
 
 //function called when curl fetches data
@@ -144,6 +164,11 @@ void parseAPIResponse(const std::string& jsonResponse) {
 
 // draw functions (implemented in renderDisplay.cpp)
 
+void getCurTime(std::tm* &timeinfo) {
+    time_t now = time(nullptr);
+    timeinfo = localtime(&now);
+}
+
 
 int main() {
     std::cout << "Lothian Bus Display Starting" << std::endl;
@@ -203,6 +228,7 @@ int main() {
         std::cerr << "Failed to initialize display" << std::endl;
         return 1;
     }
+    backlight_init();
     
 
     //std::cout << "Display module initialized" << std::endl;
@@ -283,10 +309,10 @@ int main() {
              // std::string apiResponse = fetchLiveBusTimes(busStop.stopName);
         
         if(!apiResponse.empty()) {
-            std::cout << "API response received (" << apiResponse.length() << " bytes), parsing..." << std::endl;
+            // std::cout << "API response received (" << apiResponse.length() << " bytes), parsing..." << std::endl;
             
             // Debug: Print first 200 characters of response
-            std::cout << "Response preview: " << apiResponse.substr(0, std::min(size_t(200), apiResponse.length())) << "..." << std::endl;
+            // std::cout << "Response preview: " << apiResponse.substr(0, std::min(size_t(200), apiResponse.length())) << "..." << std::endl;
             
             // Parse JSON
             try {
@@ -354,12 +380,11 @@ int main() {
         }
         // Calculate wait time to sync with the next minute boundary
         time_t now = time(nullptr);
-        struct tm* timeinfo = localtime(&now);
+        std::tm* timeinfo = localtime(&now);
         int secondsIntoMinute = timeinfo->tm_sec;
         int secondsToWait = (60 - secondsIntoMinute);
         if (secondsToWait <= 0) secondsToWait = 60;  // Safety check
         int iterations = secondsToWait * 10;  // 10 iterations per second (100ms each)
-        
         std::cout << "Waiting " << secondsToWait << " seconds until next refresh" << std::endl;
         
     // Poll until the next minute, checking for touch input
@@ -382,6 +407,7 @@ int main() {
                     g_dropdownStops.clear();
                     showDropDownMenu = true;
                     // debounce slightly and refresh immediately
+                    autoTurnOff = 0;
                     DEV_Delay_ms(15);
                     break;
                 }
@@ -466,22 +492,36 @@ int main() {
             DEV_Delay_ms(100);  // Check every 100ms
 
             autoTurnOff++;  // Increment by 1 each 100ms (consistent timing)
-            if(autoTurnOff >= 600){ // After 60 seconds of idle (600 * 100ms), turn off display
+            if(autoTurnOff >= 3000){ // After 5 minutes of idle (3000 * 100ms), turn off display
                 std::cout << "No activity detected, turning off display to save power." << std::endl;
+                std::cout << "Current time: " << std::put_time(timeinfo, "%H:%M:%S") << std::endl;
                 Paint_Clear(BLACK);  // Clear the buffer first
                 displayBuffer(BlackImage);  // Then display the black buffer
+                
+
+
+                st7796_sleep();
+                backlight_off();  // turn off the LED backlight
 
                 //wait for touch to turn back on
                 bool wokenUp = false;
                 while(!wokenUp){
                     if (get_touch_data(&touch_data)) {
+                        
                         std::cout << "Touch detected, turning display back on." << std::endl;
+                        time_t now = time(nullptr);
+                        std::tm* timeinfo = localtime(&now);
+                        std::cout << "Current time: " << std::put_time(timeinfo, "%H:%M:%S") << std::endl;
+                        fetchLiveBusTimes(busStops[currentBusStopIndex].stopID); //pre-fetch data to avoid delay
                         DEV_Delay_ms(50); //debounce
                         autoTurnOff = 0;
                         wokenUp = true;
                     }
                     DEV_Delay_ms(100);  // Check every 100ms while screen is off
                 }
+                st7796_wakeup();
+                backlight_on();
+                displayBuffer(BlackImage);
                 // Break out of the timing loop to refresh display immediately
                 break;
             }
