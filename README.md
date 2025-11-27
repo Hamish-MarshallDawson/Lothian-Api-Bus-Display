@@ -13,4 +13,13 @@ Then doing a short calculation the software sorts the bus stops by closest to th
 ## Hardware used 
 Can be found in notes folder
 
+## Known issues
+if application sleeps for a while, the bus stop it slept on will be glitches afterwards showing 14... mins for some reason.
+
+screen only wakes from touching drop down, should wake from contact at any point.
+
+doesn't automatically call for knew info on wake.
+
+
+
 
