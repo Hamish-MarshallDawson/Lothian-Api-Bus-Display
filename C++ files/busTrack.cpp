@@ -162,14 +162,6 @@ void parseAPIResponse(const std::string& jsonResponse) {
     }
 }
 
-// draw functions (implemented in renderDisplay.cpp)
-
-void getCurTime(std::tm* &timeinfo) {
-    time_t now = time(nullptr);
-    timeinfo = localtime(&now);
-}
-
-
 int main() {
     std::cout << "Lothian Bus Display Starting" << std::endl;
     // dynamic stops returned by openmappull -> now use BusStopInfo

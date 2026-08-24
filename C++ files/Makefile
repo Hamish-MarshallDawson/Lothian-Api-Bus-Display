@@ -20,7 +20,7 @@ C_SOURCES = $(DIR_LCD)/st7796.c \
             $(DIR_FONTS)/font48.c \
             $(DIR_FONTS)/font50.c
 
-CPP_SOURCES = busTrack.cpp openmappull.cpp
+CPP_SOURCES = busTrack.cpp openmappull.cpp renderDisplay.cpp
 #CPP_SOURCES = displayTest.cpp
 
 # Compiler settings
@@ -38,7 +38,7 @@ TARGET = busTrack
 all: $(TARGET) openmappull
 
 # Build busTrack (links C device libs + wiringPi)
-$(TARGET): $(C_SOURCES:.c=.o) busTrack.o openmappull.o busStopInfo.o config_utils.o
+$(TARGET): $(C_SOURCES:.c=.o) busTrack.o renderDisplay.o openmappull.o busStopInfo.o config_utils.o
 	$(CXX) $^ -o $@ $(LDFLAGS)
 
 # Build openmappull (standalone helper) - link the implementation with the CLI main and config utils
