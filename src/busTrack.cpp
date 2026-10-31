@@ -20,6 +20,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -35,6 +36,8 @@
 #include "renderDisplay.h"  // drawMainScreen, flushToLcd
 #include "screens.h"        // screen state, touch areas, transitions
 #include "screens_draw.h"   // drawing for every screen but the board
+#include "bus_detail.h"     // the bus detail screen (snapshot and, later, the display)
+#include "../gfx/theme.h"
 #include "settings.h"
 #include "../gfx/canvas.h"
 
@@ -68,6 +71,8 @@ struct Options {
     std::string snapshotPath;   // --snapshot
     std::string fixturePath;    // --fixture
     std::string screen = "main";// --screen
+    std::string tilesDir;       // --tiles: OSM tile folder for the bus-detail map (none = plain map)
+    std::string hide;           // --hide: comma-separated routes to hide on the board (snapshot only)
     std::string fetchStop;      // --fetch
     time_t now = 0;             // --now (0 = real clock)
     int ageSecs = 0;            // --age: render as if the data is this many seconds old
@@ -81,6 +86,8 @@ static bool parseOptions(int argc, char **argv, Options &o) {
         if (arg == "--snapshot" && hasNext) o.snapshotPath = argv[++i];
         else if (arg == "--fixture" && hasNext) o.fixturePath = argv[++i];
         else if (arg == "--screen" && hasNext) o.screen = argv[++i];
+        else if (arg == "--tiles" && hasNext) o.tilesDir = argv[++i];
+        else if (arg == "--hide" && hasNext) o.hide = argv[++i];
         else if (arg == "--fetch" && hasNext) o.fetchStop = argv[++i];
         else if (arg == "--age" && hasNext) o.ageSecs = std::atoi(argv[++i]);
         else if (arg == "--direction" && hasNext) o.direction = argv[++i];
@@ -192,11 +199,15 @@ static long staleAgeSecs(const StopBoard &board, time_t now) {
     return board.fetchedAt > 0 ? static_cast<long>(now - board.fetchedAt) : -1;
 }
 
+// Routes hidden on the board. Only the snapshot sets them for now; the display loop takes them
+// from the flows state (hidden-routes file), which is wired by lbd-ui-flows.
+static std::set<std::string> g_snapshotHidden;
+
 static void drawFrame(gfx::Canvas &frame, Screen screen, StopDirection dir, ErrorReason reason,
                       const StopBoard &board, const std::vector<BusStopInfo> &list,
                       time_t now, long staleSecs, int retrySecs) {
     switch (screen) {
-    case Screen::Board:     drawMainScreen(frame, board, now, dir); break;
+    case Screen::Board:     drawMainScreen(frame, board, now, dir, g_snapshotHidden); break;
     case Screen::Boot:      drawBootScreen(frame, "Finding stops..."); break;
     case Screen::Loading:   drawLoadingScreen(frame, "Finding stops...", now); break;
     case Screen::StopList: {
@@ -218,6 +229,71 @@ static void drawFrame(gfx::Canvas &frame, Screen screen, StopDirection dir, Erro
 // ---------------------------------------------------------------------------
 // Snapshot mode
 
+// The bus detail screen from a hand-made trip, for checking the drawing. The stops and the
+// bus position are approximate city-centre points for the demo, not live data.
+//   bus-detail              live, 1 stop away, 4 min late
+//   bus-detail-stale        last report 3 min ago
+//   bus-detail-stuck        not moved for 4 min
+//   bus-detail-notstarted   no vehicle yet, leaves Waverley Bridge at 16:02
+static int runBusDetailSnapshot(const Options &o, const std::string &variant, time_t now) {
+    BusDetailView v;
+    v.service = "31";
+    v.destination = "Bonnyrigg";
+    v.routeFill = gfx::rgb(0x7B, 0x6A, 0x58);  // busLineColours["31"] = #7B6A58
+    v.stops = {
+        {"Waverley Bridge", "16:02", 55.9515, -3.1905},
+        {"Princes Street (Scott Mon.)", "16:04", 55.9517, -3.1932},
+        {"West Princes Street", "16:06", 55.9499, -3.2010},
+        {"Haymarket Station", "16:09", 55.9455, -3.2212},
+        {"West Coates", "16:11", 55.9410, -3.2285},
+        {"Roseburn Terrace", "16:13", 55.9395, -3.2380},
+    };
+    v.myStop = 3;
+    v.nextStop = 2;
+    v.hasBus = true;
+    v.busLat = 55.9508;
+    v.busLon = -3.1975;
+    v.lastUpdateAgeS = 20;
+    v.lateMin = 4;
+    v.stopsAway = 1;
+    v.dueMin = 6;
+    v.state = DetailState::Live;
+
+    gfx::StatusBarText status{"16:02", "Live", theme::LIVE, true};
+    if (variant == "bus-detail-stale") {
+        v.state = DetailState::Stale;
+        v.lastUpdateAgeS = 180;
+        status = gfx::StatusBarText{"16:02", "Offline", theme::DANGER, false};
+    } else if (variant == "bus-detail-stuck") {
+        v.stuck = true;
+        v.stuckForS = 240;
+    } else if (variant == "bus-detail-notstarted") {
+        v.state = DetailState::NotStarted;
+        v.hasBus = false;
+        v.nextStop = -1;
+        v.stopsAway = -1;
+        v.dueMin = -1;
+        v.originName = "Waverley Bridge";
+        v.originTime = "16:05";
+        status = gfx::StatusBarText{"16:02", "Scheduled", theme::TEXT_MUTED, false};
+    }
+    (void)now;
+
+    const int w = ST7796_WIDTH, h = ST7796_HEIGHT;
+    uint16_t *buffer = static_cast<uint16_t *>(malloc(sizeof(uint16_t) * w * h));
+    if (!buffer) { std::cerr << "Out of memory\n"; return 1; }
+    gfx::Canvas frame(buffer, w, h);
+    gfx::TileStore tiles(o.tilesDir);  // empty = no tiles, the plain background
+    drawBusDetail(frame, v, status, tiles);
+
+    bool ok = writePngRGB565(o.snapshotPath, frame.data(), w, h);
+    free(buffer);
+    if (!ok) { std::cerr << "Could not write " << o.snapshotPath << "\n"; return 1; }
+    std::cout << "Wrote " << o.snapshotPath << " (screen " << variant
+              << (o.tilesDir.empty() ? ", no tiles" : ", tiles") << ")\n";
+    return 0;
+}
+
 static bool parseScreenName(const std::string &name, Screen &screen, ErrorReason &reason) {
     reason = ErrorReason::None;
     if      (name == "main")            screen = Screen::Board;
@@ -236,6 +312,7 @@ static bool parseScreenName(const std::string &name, Screen &screen, ErrorReason
 
 static int runSnapshot(const Options &o) {
     const time_t now = o.now ? o.now : time(nullptr);
+    if (o.screen.rfind("bus-detail", 0) == 0) return runBusDetailSnapshot(o, o.screen, now);
 
     Screen screen;
     ErrorReason reason;
@@ -274,6 +351,10 @@ static int runSnapshot(const Options &o) {
     StopDirection dir = StopDirection::None;
     if (o.direction == "into") dir = StopDirection::Into;
     else if (o.direction == "out") dir = StopDirection::Out;
+    {   // --hide 44,22: routes left out of the board snapshot
+        std::stringstream hides(o.hide);
+        for (std::string r; std::getline(hides, r, ',');) if (!r.empty()) g_snapshotHidden.insert(r);
+    }
     drawFrame(frame, screen, dir, reason, board, sampleStops(), frameNow, staleSecs, 42);
 
     bool ok = writePngRGB565(o.snapshotPath, frame.data(), w, h);

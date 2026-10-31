@@ -4,6 +4,7 @@
 #pragma once
 #include "nunito_bold_14.h"
 #include "nunito_bold_16.h"
+#include "nunito_bold_18.h"
 #include "nunito_bold_20.h"
 #include "nunito_bold_22.h"
 #include "nunito_bold_26.h"

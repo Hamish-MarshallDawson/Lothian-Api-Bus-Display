@@ -23,11 +23,11 @@ endif
 C_SOURCES = $(HW_SOURCES)
 
 # Anti-aliased canvas, baked fonts and widgets (gfx/), shared with lbd-ui-board
-GFX_SOURCES = $(DIR_GFX)/canvas.cpp $(DIR_GFX)/text.cpp $(DIR_GFX)/widgets.cpp
+GFX_SOURCES = $(DIR_GFX)/canvas.cpp $(DIR_GFX)/text.cpp $(DIR_GFX)/widgets.cpp $(DIR_GFX)/map.cpp
 
 # Library code shared by busTrack and the tests
 LIB_SOURCES = departures.cpp timetables.cpp direction.cpp diskcache.cpp openmappull.cpp refresh.cpp \
-              png_write.cpp renderDisplay.cpp screens.cpp screens_draw.cpp $(GFX_SOURCES)
+              png_write.cpp renderDisplay.cpp bus_detail.cpp screens.cpp screens_draw.cpp $(GFX_SOURCES)
 CPP_SOURCES = busTrack.cpp $(LIB_SOURCES)
 
 # Compiler settings

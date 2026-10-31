@@ -12,6 +12,7 @@ extern "C" {
 }
 
 #include <algorithm>
+#include <set>
 #include <cstdio>
 #include <ctime>
 #include <string>
@@ -117,9 +118,9 @@ void drawBoardStatus(gfx::Canvas &c, const StopBoard &board, time_t now) {
 // Baseline that centres a face's cap height on cy
 int capBaselineOf(int cy, const FontFace &f) { return cy + (f.size * 35 + 50) / 100; }
 
-// One departure, 56 px row at top r: pill and destination on the left, minutes on the right
+// One departure, 52 px row at top r: pill and destination on the left, minutes on the right
 void drawRow(gfx::Canvas &c, int r, const Departure &d, bool stale) {
-    const int cy = r + 28;                       // the row's centre line
+    const int cy = r + 26;                       // the row's centre line
     const bool cancelled = d.cancelled;
     const bool due = !cancelled && d.minutes <= 0;
     const Color fill = routeColour(d.service);
@@ -127,7 +128,7 @@ void drawRow(gfx::Canvas &c, int r, const Departure &d, bool stale) {
     // Route pill, top left
     Color pillFill = cancelled ? fadeToBg(fill, 128) : fill;
     if (stale) pillFill = fadeToBg(pillFill, 128);
-    gfx::drawRoutePill(c, Rect{MARGIN, r + 8, PILL_W, PILL_H}, d.service.substr(0, 3), pillFill, F::kBold16);
+    gfx::drawRoutePill(c, Rect{MARGIN, r + 6, PILL_W, PILL_H}, d.service.substr(0, 3), pillFill, F::kBold16);
 
     // Right side: the number (Bold 26) and a smaller "min" (SemiBold 16) on one baseline,
     // or "Due" (Bold 26), or "Cancelled" (SemiBold 15). Live icon to the left of it.
@@ -165,7 +166,7 @@ void drawRow(gfx::Canvas &c, int r, const Departure &d, bool stale) {
     if (showIcon) gfx::drawLiveIcon(c, rightLeft, cy, stale ? fadeToBg(ACCENT, 128) : ACCENT);
     if (d.delayed && !cancelled) {
         Color late = stale ? fadeToBg(WARN, 128) : WARN;
-        gfx::drawTextIn(c, F::kRegular12, Rect{0, 0, rightEdge + 1, 0}, r + 51, gfx::Align::Right, "Delayed", late);
+        gfx::drawTextIn(c, F::kRegular12, Rect{0, 0, rightEdge + 1, 0}, r + 48, gfx::Align::Right, "Delayed", late);
     }
 
     // Destination, one line under the pill, clear of the minutes
@@ -173,7 +174,7 @@ void drawRow(gfx::Canvas &c, int r, const Departure &d, bool stale) {
     if (stale) ink = fadeToBg(ink, 128);
     const int destMax = rightLeft - 8 - MARGIN;
     const std::string dest = gfx::fitText(F::kRegular19, d.destination, destMax);
-    const int baseline = r + 45;
+    const int baseline = r + 41;
     gfx::drawText(c, F::kRegular19, MARGIN, baseline, dest, ink);
     if (cancelled)  // strike through at mid x-height
         c.hline(MARGIN, MARGIN + gfx::textWidth(F::kRegular19, dest) - 1, baseline - 7, ink);
@@ -221,39 +222,40 @@ void drawAlertBanner(gfx::Canvas &c, const StopBoard &board) {
 
 // Route chips: each service at this stop, in the order they first appear. A chevron
 // stands in for the rest when they do not fit.
-void drawChips(gfx::Canvas &c, const StopBoard &board) {
+void drawChips(gfx::Canvas &c, const StopBoard &board, const std::set<std::string> &hidden) {
     std::vector<std::string> services;
     for (const auto &d : board.departures)
         if (d.hasMinutes && std::find(services.begin(), services.end(), d.service) == services.end())
             services.push_back(d.service);
 
-    const FontFace &f = F::kSemiBold15;
-    const int limit = SCREEN_W - MARGIN - 14;  // leave room for the chevron
-    int x = MARGIN;
-    for (const auto &s : services) {
-        const int w = std::max(CHIP_MIN_W, gfx::textWidth(f, s) + 12);
-        if (x + w > limit) {
-            gfx::drawChevron(c, SCREEN_W - MARGIN - 4, kChipsTop + CHIP_H / 2, TEXT_MUTED, true);
-            break;
-        }
-        gfx::drawRoutePill(c, Rect{x, kChipsTop, w, CHIP_H}, s, routeColour(s), f);
-        x += w + 6;
+    bool overflow = false;
+    const std::vector<Rect> zones = gfx::chipLayout(services, overflow);
+    for (size_t i = 0; i < zones.size(); ++i) {
+        const std::string &s = services[i];
+        const bool isHidden = hidden.count(s) > 0;
+        gfx::drawChip(c, zones[i], s, routeColour(s), isHidden);
     }
+    if (overflow)
+        gfx::drawChevron(c, SCREEN_W - MARGIN - 4, kChipsTop + CHIP_BAND_H / 2, TEXT_MUTED, true);
 }
 
-// "Upcoming departures" with a maroon underline and a full-width rule
-void drawSectionLabel(gfx::Canvas &c) {
+// "Upcoming departures" with a maroon underline and a full-width rule. With routes hidden
+// the label says how many: "Upcoming departures - 2 routes hidden".
+void drawSectionLabel(gfx::Canvas &c, int hiddenRoutes) {
     const FontFace &f = F::kRegular13;
-    const char *label = "Upcoming departures";
+    std::string label = "Upcoming departures";
+    if (hiddenRoutes > 0)
+        label += " - " + std::to_string(hiddenRoutes) + (hiddenRoutes == 1 ? " route hidden" : " routes hidden");
     const int base = gfx::centredBaseline(kSectionTop, 24, f);
     gfx::drawText(c, f, MARGIN, base, label, TEXT_MUTED);
-    c.fillRect(Rect{MARGIN, kSectionTop + 21, gfx::textWidth(f, label), 2}, ACCENT);
+    c.fillRect(Rect{MARGIN, kSectionTop + 21, gfx::textWidth(f, "Upcoming departures"), 2}, ACCENT);
     c.hline(0, SCREEN_W - 1, kSectionTop + 23, DIVIDER);
 }
 
 }  // namespace
 
-void drawMainScreen(gfx::Canvas &c, const StopBoard &board, time_t now, StopDirection dir) {
+void drawMainScreen(gfx::Canvas &c, const StopBoard &board, time_t now, StopDirection dir,
+                    const std::set<std::string> &hidden) {
     c.clear(BG);
 
     drawBoardStatus(c, board, now);
@@ -267,8 +269,15 @@ void drawMainScreen(gfx::Canvas &c, const StopBoard &board, time_t now, StopDire
     gfx::drawButton(c, theme::kDirInto, "Into city", F::kSemiBold15, dir == StopDirection::Into);
     gfx::drawButton(c, theme::kDirOut, "Out of city", F::kSemiBold15, dir == StopDirection::Out);
 
-    drawChips(c, board);
-    drawSectionLabel(c);
+    // Hidden routes: counted in the label, left out of the rows (their chips stay, outlined)
+    int hiddenRoutes = 0;
+    {
+        std::set<std::string> seen;
+        for (const auto &d : board.departures)
+            if (hidden.count(d.service) && seen.insert(d.service).second) ++hiddenRoutes;
+    }
+    drawChips(c, board, hidden);
+    drawSectionLabel(c, hiddenRoutes);
 
     const bool hasAlert = !board.notices.empty();
     if (hasAlert) drawAlertBanner(c, board);
@@ -279,7 +288,7 @@ void drawMainScreen(gfx::Canvas &c, const StopBoard &board, time_t now, StopDire
 
     std::vector<const Departure *> rows;
     for (const auto &d : board.departures)
-        if (d.hasMinutes) rows.push_back(&d);
+        if (d.hasMinutes && !hidden.count(d.service)) rows.push_back(&d);
 
     if (rows.empty()) {
         const int bottom = SCREEN_H;
