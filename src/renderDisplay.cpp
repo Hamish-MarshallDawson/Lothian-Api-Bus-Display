@@ -290,7 +290,10 @@ void drawMainScreen(gfx::Canvas &c, const StopBoard &board, time_t now, StopDire
     for (const auto &d : board.departures)
         if (d.hasMinutes && !hidden.count(d.service)) rows.push_back(&d);
 
-    if (rows.empty()) {
+    if (rows.empty() && hiddenRoutes > 0 && board.status == BoardStatus::Ok) {
+        // Every route is hidden: say so, rather than "no buses"
+        drawStatusBlock(c, rowsTop, SCREEN_H, "All routes hidden", TEXT, "Tap a route above to show it", false);
+    } else if (rows.empty()) {
         const int bottom = SCREEN_H;
         if (board.status == BoardStatus::Loading) {
             drawStatusBlock(c, rowsTop, bottom, "Loading...", TEXT_MUTED, "", false);

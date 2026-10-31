@@ -1,22 +1,25 @@
 #ifndef SCREENS_H
 #define SCREENS_H
 
-// Screen state, touch hit areas and transitions for every screen except the
-// main departures board (that is drawMainScreen). Pure logic: no drawing and no
+// Screen state, touch hit areas and transitions. Pure logic: no drawing and no
 // hardware, so it builds and tests anywhere (make test).
 //
 // Flow: the board shows the nearest stop. Its Into/Out buttons switch direction
-// straight away (the nearest stop that way). Its header opens the stop list for
-// the current direction. Error and empty screens offer Choose stop, which opens
-// the same list.
+// and keep the stop on screen (its pair across the road). Its header opens the
+// stop list for the current direction. A route chip hides or shows that route.
+// A departure row opens the bus detail screen; Back returns to the board. Error
+// and empty screens offer Back to the board and Choose stop.
 
 #include "departures.h"
 #include "../gfx/theme.h"
 
-enum class Screen { Boot, Board, Loading, StopList, Error, Empty, Asleep };
+enum class Screen { Boot, Board, Loading, StopList, BusDetail, Error, Empty, Asleep };
 
 // What a tap means, per screen.
-enum class Action { None, OpenStopList, PickInto, PickOut, Back, PickStop, Retry, Choose, Wake };
+enum class Action {
+    None, OpenStopList, PickInto, PickOut, Back, PickStop, Retry, Choose, Wake,
+    ToggleRoute, OpenDetail
+};
 
 enum class StopDirection { None, Into, Out };
 
@@ -48,37 +51,55 @@ constexpr Rect kChooseBtn{16, 408, 288, 56};
 constexpr int kStopRowsY = 72;
 constexpr int kStopRowH = 64;
 constexpr int kMaxStopRows = 6;   // (480 - 72) / 64 rows fit
+
+// Board: route chips and departure rows. Their touch zones are the drawn ones: the chip
+// zones come from gfx::chipLayout and the row zones from theme::rowRect. busTrack stores
+// them in UiState before each frame, so the taps and the drawing agree.
+constexpr int kMaxChips = 6;
+constexpr int kBoardMaxRows = 5;        // rows that fit below the chips (theme::rowRect, 52 px)
+
+// The bus detail screen refreshes this often while it is open.
+constexpr int kDetailRefreshS = 15;
+
 constexpr Rect stopRow(int i) { return Rect{0, kStopRowsY + kStopRowH * i, 320, kStopRowH}; }
 
 struct Hit { Rect rect; Action action; int arg; };
 
-// Every hit area on a screen, in priority order. stopCount limits the stop rows
-// on StopList. Returns how many were written (at most max).
-int listHits(Screen s, int stopCount, Hit *out, int max);
-
-// The action for a tap at (x, y), or Action::None. arg gets the stop row index.
-Action hitTest(Screen s, int stopCount, int x, int y, int &arg);
-
-// Everything the loop needs to do after a transition.
-struct Effect {
-    enum Kind { None, Lookup, FetchBoard, ShowStop, Sleep };
-    Kind kind;
-    StopDirection dir;   // Lookup: nearest stops (None, at startup) or grouped by direction
-    int index;           // ShowStop: row in the stop list
-    Effect(Kind k = None, StopDirection d = StopDirection::None, int i = -1)
-        : kind(k), dir(d), index(i) {}
-};
-
+// The state of the screen, as far as taps go. The loop keeps chipCount and
+// rowCount in step with the board it draws.
 struct UiState {
     Screen screen = Screen::Boot;
-    Screen prev = Screen::Board;              // where Back on the stop list returns to
+    Screen prev = Screen::Board;              // where Back returns to
     Screen target = Screen::Board;            // where a finished Loading goes: Board or StopList
     StopDirection dir = StopDirection::None;  // direction on the board, last picked
     ErrorReason reason = ErrorReason::None;
     int stopCount = 0;                        // rows in the current stop list
+    int chipCount = 0;                        // route chips on the board
+    int rowCount = 0;                         // departure rows on the board (after hiding)
+    Rect chipZones[kMaxChips] = {};           // the chips' touch zones, as drawn (from gfx::chipLayout)
+    Rect rowZones[kBoardMaxRows] = {};        // the rows' touch zones, as drawn (from theme::rowRect)
+    int detailRow = -1;                       // the row the bus detail screen is for
 };
 
-// A tap on the screen. arg is the stop row for PickStop.
+// Every hit area on the current screen, in priority order. Returns how many were
+// written (at most max).
+int listHits(const UiState &st, Hit *out, int max);
+
+// The action for a tap at (x, y), or Action::None. arg gets the row, chip or stop index.
+Action hitTest(const UiState &st, int x, int y, int &arg);
+
+// Everything the loop needs to do after a transition.
+struct Effect {
+    enum Kind { None, Lookup, FetchBoard, ShowStop, Sleep, ToggleRoute };
+    Kind kind;
+    StopDirection dir;   // Lookup: nearest stops (None, at startup) or grouped by direction
+    int index;           // ShowStop: row in the stop list; ToggleRoute: chip index
+    bool pair;           // Lookup: show the stop's pair across the road, not the nearest
+    Effect(Kind k = None, StopDirection d = StopDirection::None, int i = -1, bool p = false)
+        : kind(k), dir(d), index(i), pair(p) {}
+};
+
+// A tap on the screen. arg is the row, chip or stop index the tap landed on.
 Effect step(UiState &st, Action a, int arg);
 
 // Results of the work the loop starts. Each returns what to do next.
@@ -88,6 +109,7 @@ Effect onBoot(UiState &st, bool ok, int count, StopDirection dir = StopDirection
 Effect onLookup(UiState &st, bool ok, int count);          // stops for a direction
 Effect onBoard(UiState &st, BoardStatus status);           // a StopEvents fetch finished
 Effect onMinute(UiState &st);                              // the once-a-minute refresh
+Effect onDetailTick(UiState &st);                          // every kDetailRefreshS on the bus detail
 Effect onIdle(UiState &st);                                // 5 minutes without a touch
 
 // Turns raw touch polls into taps. A tap is a finger that goes down and comes

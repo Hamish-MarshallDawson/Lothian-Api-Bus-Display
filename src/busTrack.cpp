@@ -33,10 +33,14 @@
 #include "openmappull.h"    // getNearestStops, getNearestStopsGrouped
 #include "png_write.h"
 #include "refresh.h"        // BoardRefresher: fetch policy and last good data
+#include "direction.h"      // Direction, for pairedStop
+#include "hidden_routes.h"  // the routes hidden from the board, saved between runs
+#include "pairing.h"        // Into/Out keeps the stop on screen
 #include "renderDisplay.h"  // drawMainScreen, flushToLcd
 #include "screens.h"        // screen state, touch areas, transitions
 #include "screens_draw.h"   // drawing for every screen but the board
-#include "bus_detail.h"     // the bus detail screen (snapshot and, later, the display)
+#include "bus_detail.h"     // the bus detail screen (snapshot and the display)
+#include "busColours.h"     // route colours, for the bus detail's pill and marker
 #include "../gfx/theme.h"
 #include "settings.h"
 #include "../gfx/canvas.h"
@@ -72,11 +76,12 @@ struct Options {
     std::string fixturePath;    // --fixture
     std::string screen = "main";// --screen
     std::string tilesDir;       // --tiles: OSM tile folder for the bus-detail map (none = plain map)
-    std::string hide;           // --hide: comma-separated routes to hide on the board (snapshot only)
     std::string fetchStop;      // --fetch
     time_t now = 0;             // --now (0 = real clock)
     int ageSecs = 0;            // --age: render as if the data is this many seconds old
     std::string direction = "none";  // --direction into|out|none: board highlight (snapshot)
+    std::string hidden;              // --hidden 44,8: routes hidden on the board (snapshot)
+    int row = 0;                     // --row N: the departure the bus detail shows (snapshot)
 };
 
 static bool parseOptions(int argc, char **argv, Options &o) {
@@ -87,10 +92,11 @@ static bool parseOptions(int argc, char **argv, Options &o) {
         else if (arg == "--fixture" && hasNext) o.fixturePath = argv[++i];
         else if (arg == "--screen" && hasNext) o.screen = argv[++i];
         else if (arg == "--tiles" && hasNext) o.tilesDir = argv[++i];
-        else if (arg == "--hide" && hasNext) o.hide = argv[++i];
         else if (arg == "--fetch" && hasNext) o.fetchStop = argv[++i];
         else if (arg == "--age" && hasNext) o.ageSecs = std::atoi(argv[++i]);
         else if (arg == "--direction" && hasNext) o.direction = argv[++i];
+        else if (arg == "--hidden" && hasNext) o.hidden = argv[++i];
+        else if (arg == "--row" && hasNext) o.row = std::atoi(argv[++i]);
         else if (arg == "--now" && hasNext) {
             std::tm tm{};
             std::istringstream in(argv[++i]);
@@ -193,21 +199,88 @@ static bool hasStop(const std::vector<BusStopInfo> &list, const std::string &sto
                        [&](const BusStopInfo &s) { return s.stopID == stopID; });
 }
 
+// A stop as the pairing code wants it (coordinates parsed; unknown coordinates are 0)
+static PairStop toPairStop(const BusStopInfo &s) {
+    PairStop p{s.stopID, s.stopName, 0, 0};
+    try {
+        p.lat = std::stod(s.latitude);
+        p.lon = std::stod(s.longitude);
+    } catch (...) {
+    }
+    return p;
+}
+
+// Index in the list of the stop across the road from current. The backend's
+// pairedStop comes first (it is a stub until M7); then the local pairing by distance.
+// Falls back to the first stop (nearest to home) when neither finds one; says so in the log.
+static int pairedIndexFor(const std::vector<BusStopInfo> &list, const BusStopInfo &current,
+                          StopDirection want) {
+    BusStopInfo out;
+    if (pairedStop(current, want == StopDirection::Into ? Direction::Into : Direction::Out, out)) {
+        for (size_t i = 0; i < list.size(); ++i)
+            if (list[i].stopID == out.stopID) return static_cast<int>(i);
+    }
+    std::vector<PairStop> cands;
+    for (const auto &s : list) cands.push_back(toPairStop(s));
+    const int idx = pairedIndex(cands, toPairStop(current));
+    if (idx < 0) {
+        std::cout << "no paired stop within 300 m; showing the nearest stop that way" << std::endl;
+        return 0;
+    }
+    return idx;
+}
+
 // Seconds since the board's data was fetched, or -1 if there is none. The error
 // screen shows it when it is recent.
 static long staleAgeSecs(const StopBoard &board, time_t now) {
     return board.fetchedAt > 0 ? static_cast<long>(now - board.fetchedAt) : -1;
 }
 
-// Routes hidden on the board. Only the snapshot sets them for now; the display loop takes them
-// from the flows state (hidden-routes file), which is wired by lbd-ui-flows.
-static std::set<std::string> g_snapshotHidden;
+
+// The route's colour from busColours.h, as RGB565 (grey when the route is not listed)
+static gfx::Color routeFillFor(const std::string &service) {
+    auto it = busLineColours.find(service);
+    if (it == busLineColours.end() || it->second.size() != 7) return theme::BADGE_UNKNOWN;
+    const unsigned r = std::stoul(it->second.substr(1, 2), nullptr, 16);
+    const unsigned g = std::stoul(it->second.substr(3, 2), nullptr, 16);
+    const unsigned b = std::stoul(it->second.substr(5, 2), nullptr, 16);
+    return gfx::rgb(static_cast<uint8_t>(r), static_cast<uint8_t>(g), static_cast<uint8_t>(b));
+}
+
+// ~/.cache/bustracker/tiles: the OpenStreetMap tiles the bus-detail map uses (kept 7 days)
+static std::string tilesCacheDir() {
+    const char *home = std::getenv("HOME");
+    return std::string(home ? home : ".") + "/.cache/bustracker/tiles";
+}
+
+// "16:02" for the bus detail's status bar
+static std::string clockText(time_t now) {
+    std::tm *t = std::localtime(&now);
+    char buf[8];
+    std::snprintf(buf, sizeof buf, "%02d:%02d", t->tm_hour, t->tm_min);
+    return buf;
+}
+
+// The bus detail for one departure. Tracking is not live yet, so the bus is shown as
+// Unavailable: the service, the destination and the board's minutes, with the stops
+// left blank. The map and the rest fill in when the vehicle feed is wired.
+static void drawDetailFor(gfx::Canvas &frame, const Departure *d, time_t now, gfx::TileStore &tiles) {
+    BusTrack t;
+    t.state = TrackState::Unavailable;
+    t.service = d ? d->service : "";
+    t.destination = d ? d->destination : "This bus has gone";
+    t.dueMin = (d && d->hasMinutes) ? d->minutes : -1;
+    gfx::StatusBarText status{clockText(now), "", theme::TEXT_MUTED, false};
+    drawBusDetail(frame, detailFromTrack(t, routeFillFor(t.service)), status, tiles);
+}
 
 static void drawFrame(gfx::Canvas &frame, Screen screen, StopDirection dir, ErrorReason reason,
                       const StopBoard &board, const std::vector<BusStopInfo> &list,
-                      time_t now, long staleSecs, int retrySecs) {
+                      time_t now, long staleSecs, int retrySecs,
+                      const RouteSet &hidden, const Departure *detail, gfx::TileStore &tiles) {
     switch (screen) {
-    case Screen::Board:     drawMainScreen(frame, board, now, dir, g_snapshotHidden); break;
+    case Screen::Board:     drawMainScreen(frame, board, now, dir, hidden); break;
+    case Screen::BusDetail: drawDetailFor(frame, detail, now, tiles); break;
     case Screen::Boot:      drawBootScreen(frame, "Finding stops..."); break;
     case Screen::Loading:   drawLoadingScreen(frame, "Finding stops...", now); break;
     case Screen::StopList: {
@@ -297,6 +370,7 @@ static bool parseScreenName(const std::string &name, Screen &screen, ErrorReason
     else if (name == "boot")            screen = Screen::Boot;
     else if (name == "loading")         screen = Screen::Loading;
     else if (name == "stop-list")       screen = Screen::StopList;
+    else if (name == "bus-detail")      screen = Screen::BusDetail;
     else if (name == "empty")           screen = Screen::Empty;
     else if (name == "asleep")          screen = Screen::Asleep;
     else if (name == "error-no-wifi")   { screen = Screen::Error; reason = ErrorReason::NoNetwork; }
@@ -309,7 +383,7 @@ static bool parseScreenName(const std::string &name, Screen &screen, ErrorReason
 
 static int runSnapshot(const Options &o) {
     const time_t now = o.now ? o.now : time(nullptr);
-    if (o.screen.rfind("bus-detail", 0) == 0) return runBusDetailSnapshot(o, o.screen, now);
+    if (o.screen.rfind("bus-detail-", 0) == 0) return runBusDetailSnapshot(o, o.screen, now);   // demo trips
 
     Screen screen;
     ErrorReason reason;
@@ -320,9 +394,9 @@ static int runSnapshot(const Options &o) {
         return 2;
     }
 
-    // Only the board needs data. The other screens draw fixed content.
+    // Only the board and its detail need data. The other screens draw fixed content.
     StopBoard board;
-    if (screen == Screen::Board || screen == Screen::Empty) {
+    if (screen == Screen::Board || screen == Screen::Empty || screen == Screen::BusDetail) {
         if (!o.fixturePath.empty()) {
             if (!loadFixtureBoard(o.fixturePath, now, board)) return 2;
         } else {
@@ -348,11 +422,19 @@ static int runSnapshot(const Options &o) {
     StopDirection dir = StopDirection::None;
     if (o.direction == "into") dir = StopDirection::Into;
     else if (o.direction == "out") dir = StopDirection::Out;
-    {   // --hide 44,22: routes left out of the board snapshot
-        std::stringstream hides(o.hide);
-        for (std::string r; std::getline(hides, r, ',');) if (!r.empty()) g_snapshotHidden.insert(r);
+
+    RouteSet hidden;
+    {
+        std::string list = o.hidden;
+        std::replace(list.begin(), list.end(), ',', '\n');
+        hidden = parseHiddenRoutes(list);
     }
-    drawFrame(frame, screen, dir, reason, board, sampleStops(), frameNow, staleSecs, 42);
+    const std::vector<const Departure *> rows = visibleRows(board, hidden);
+    const Departure *detail = (o.row >= 0 && o.row < static_cast<int>(rows.size())) ? rows[o.row] : nullptr;
+
+    gfx::TileStore tiles(o.tilesDir);   // empty = no tiles, the plain background
+    drawFrame(frame, screen, dir, reason, board, sampleStops(), frameNow, staleSecs, 42,
+              hidden, detail, tiles);
 
     bool ok = writePngRGB565(o.snapshotPath, frame.data(), w, h);
     free(buffer);
@@ -449,6 +531,11 @@ static int runDisplay() {
     touch_data_t touch;
     TapTracker taps;
     long lastTouchMs = nowMs();
+    gfx::TileStore tiles(tilesCacheDir());   // bus-detail map tiles, kept in ~/.cache
+    RouteSet hidden;                         // routes hidden from the board, kept in ~/.config
+    loadHiddenRoutes(hiddenRoutesPath(), hidden);
+    std::cout << "hidden routes: " << hidden.size() << std::endl;
+    long lastDetailMs = 0;                   // the bus detail refreshes every kDetailRefreshS
 
     // Copy the refresher's board for the stop on screen; the name comes from the stop list.
     auto takeBoard = [&]() {
@@ -457,10 +544,39 @@ static int runDisplay() {
         board.distanceFromHomeM = boardStop.distance_m;
     };
 
+    // The rows and chips the board shows now, so taps land on what is drawn
+    // The zones are the ones the drawing uses: chipLayout for the chips (same labels as
+    // drawChips), theme::rowRect for the rows (same top and height as drawMainScreen).
+    auto updateCounts = [&]() {
+        const bool alert = !board.notices.empty();
+        const int rowsTop = alert ? theme::kRowsTopAlert : theme::kRowsTop;
+
+        const std::vector<std::string> services = boardRoutes(board);
+        bool overflow = false;
+        const std::vector<gfx::Rect> chips = gfx::chipLayout(services, overflow);
+        ui.chipCount = std::min(static_cast<int>(chips.size()), kMaxChips);
+        for (int i = 0; i < ui.chipCount; ++i)
+            ui.chipZones[i] = ::Rect{chips[i].x, chips[i].y, chips[i].w, chips[i].h};
+
+        const int slots = std::min(kBoardMaxRows, (theme::SCREEN_H - rowsTop) / theme::ROW_H);
+        ui.rowCount = std::min(static_cast<int>(visibleRows(board, hidden).size()), slots);
+        for (int i = 0; i < ui.rowCount; ++i) {
+            const gfx::Rect r = theme::rowRect(i, rowsTop);
+            ui.rowZones[i] = ::Rect{r.x, r.y, r.w, r.h};
+        }
+    };
+
+    // The departure the bus detail is for (its row on the board), or null
+    auto detailDeparture = [&]() -> const Departure * {
+        const auto rows = visibleRows(board, hidden);
+        return (ui.detailRow >= 0 && ui.detailRow < static_cast<int>(rows.size())) ? rows[ui.detailRow] : nullptr;
+    };
+
     auto flush = [&]() {
         const time_t now = time(nullptr);
+        updateCounts();
         drawFrame(frame, ui.screen, ui.dir, ui.reason, board, pick, now,
-                  staleAgeSecs(board, now), secondsToNextMinute());
+                  staleAgeSecs(board, now), secondsToNextMinute(), hidden, detailDeparture(), tiles);
         flushToLcd(frame);
     };
 
@@ -503,9 +619,28 @@ static int runDisplay() {
                     bool ok = getNearestStopsGrouped(address, perGroup, g);
                     if (ok) pick = e.dir == StopDirection::Into ? g.intoCity : g.outOfCity;
                     else pick.clear();
+                    const bool pairReq = e.pair;
+                    const StopDirection want = e.dir;
                     e = onLookup(ui, ok, static_cast<int>(pick.size()));
+                    // Into/Out: the stop across the road from the one on screen
+                    if (pairReq && e.kind == Effect::ShowStop) {
+                        e = Effect(Effect::ShowStop, StopDirection::None, pairedIndexFor(pick, boardStop, want));
+                    }
                 }
                 break;
+            case Effect::ToggleRoute: {
+                // A chip: hide the route, or show it again if it is hidden
+                const auto routes = boardRoutes(board);
+                if (e.index >= 0 && e.index < static_cast<int>(routes.size())) {
+                    const std::string &r = routes[e.index];
+                    if (!hidden.erase(r)) hidden.insert(r);
+                    if (!saveHiddenRoutes(hiddenRoutesPath(), hidden))
+                        std::cerr << "could not save hidden routes" << std::endl;
+                    std::cout << "routes hidden: " << hidden.size() << std::endl;
+                }
+                e = Effect();
+                break;
+            }
             case Effect::ShowStop:
                 std::cout << "picked stop row " << e.index << " of " << pick.size() << std::endl;
                 boardStop = pick[e.index];
@@ -541,17 +676,24 @@ static int runDisplay() {
         bool tapped = false;
         while (nowMs() < minuteEnd && !tapped) {
             if (pollBoard()) break;                 // fetched: redraw now
+            // The bus detail refreshes on its own timer; the board does not
+            if (ui.screen == Screen::BusDetail && nowMs() - lastDetailMs >= kDetailRefreshS * 1000L) {
+                lastDetailMs = nowMs();
+                perform(onDetailTick(ui));
+                break;                              // redraw with the new data
+            }
             bool touching = get_touch_data(&touch);
             Tap tap;
             if (taps.update(touching, touch.coords[0].x, touch.coords[0].y, nowMs(), tap)) {
                 tapped = true;
                 lastTouchMs = nowMs();
                 int arg = -1;
-                Action action = hitTest(ui.screen, ui.stopCount, tap.x, tap.y, arg);
+                Action action = hitTest(ui, tap.x, tap.y, arg);
                 std::cout << "Tap at (" << tap.x << ", " << tap.y << "): action "
                           << static_cast<int>(action) << std::endl;
                 if (action != Action::None) {
                     Effect e = step(ui, action, arg);
+                    if (ui.screen == Screen::BusDetail) lastDetailMs = nowMs();
                     flush();                       // show "Finding stops..." before any network wait
                     perform(e);
                 }

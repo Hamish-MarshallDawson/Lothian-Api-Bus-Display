@@ -27,7 +27,8 @@ GFX_SOURCES = $(DIR_GFX)/canvas.cpp $(DIR_GFX)/text.cpp $(DIR_GFX)/widgets.cpp $
 
 # Library code shared by busTrack and the tests
 LIB_SOURCES = departures.cpp timetables.cpp direction.cpp diskcache.cpp openmappull.cpp refresh.cpp \
-              png_write.cpp renderDisplay.cpp bus_detail.cpp screens.cpp screens_draw.cpp tracking.cpp tiles.cpp \
+              png_write.cpp renderDisplay.cpp bus_detail.cpp screens.cpp screens_draw.cpp \
+              hidden_routes.cpp pairing.cpp tracking.cpp tiles.cpp \
               $(GFX_SOURCES)
 CPP_SOURCES = busTrack.cpp $(LIB_SOURCES)
 
@@ -59,8 +60,8 @@ tests/live_format_test: tests/live_format_test.o departures.o timetables.o diskc
 	$(CXX) $^ -o $@ -lcurl -lm
 
 # Screen state, transitions and touch hit areas (screens.cpp, no drawing)
-$(TEST_SCREENS): test_screens.cpp screens.cpp screens.h departures.h
-	$(CXX) -Wall -Wextra -O1 -std=c++17 test_screens.cpp screens.cpp -o $@
+$(TEST_SCREENS): test_screens.cpp screens.cpp screens.h hidden_routes.cpp pairing.cpp departures.h
+	$(CXX) -Wall -Wextra -O1 -std=c++17 test_screens.cpp screens.cpp hidden_routes.cpp pairing.cpp -o $@
 
 # Dev-only: checks the picker's boards against the live API (needs BUSTRACKER_KEY and
 # BUS_ADDRESS). Not part of make test. Prints no stop names, codes or coordinates.
