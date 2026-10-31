@@ -6,6 +6,7 @@
 namespace theme {
 
 using gfx::Color;
+using gfx::rgb;
 
 constexpr Color BG            = 0x0862;  // #0B0F14 screen background
 constexpr Color HEADER_BG     = 0x10C4;  // #141B24 header band
@@ -20,6 +21,13 @@ constexpr Color NOTICE_FG     = BG;
 constexpr Color BADGE_UNKNOWN = 0x5B0E;  // #5A6370 route not in busLineColours
 constexpr Color BADGE_TEXT_DARK  = 0x0862;  // #0B0F14
 constexpr Color BADGE_TEXT_LIGHT = 0xFFFF;  // #FFFFFF
+
+// Tokens for the other screens (lbd-ui-flows). Buttons and selection read against BG.
+constexpr Color BUTTON_FILL     = rgb(0x1E, 0x2A, 0x38);  // raised button
+constexpr Color BUTTON_TEXT     = TEXT;
+constexpr Color ROW_SELECTED    = rgb(0x17, 0x3B, 0x5C);  // selected list row, Lothian blue family
+constexpr Color ROW_SELECTED_TEXT = TEXT;
+constexpr Color ERROR           = ALERT;                  // error text and status
 
 // Spacing, px
 constexpr int SCREEN_W = 320;

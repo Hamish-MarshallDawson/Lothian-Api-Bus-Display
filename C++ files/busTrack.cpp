@@ -3,8 +3,8 @@
  *
  * Modes:
  *   busTrack                                  run the display (needs the BUSTRACKER_HW build)
- *   busTrack --snapshot out.png [--fixture f.json] [--now YYYY-MM-DDTHH:MM:SS] [--screen NAME]
- *                                             render one frame to a PNG; no GPIO/SPI/touch
+ *   busTrack --snapshot out.png [--fixture f.json] [--now YYYY-MM-DDTHH:MM:SS]
+ *            [--age SECS] [--screen NAME]     render one frame to a PNG; no GPIO/SPI/touch
  *                                             NAME: main boot loading direction stop-list
  *                                                   error-no-wifi error-key error-rate
  *                                                   error-no-stops empty asleep
@@ -32,15 +32,11 @@
 #include "openmappull.h"    // getNearestStops, getNearestStopsGrouped
 #include "png_write.h"
 #include "refresh.h"        // BoardRefresher: fetch policy and last good data
-#include "renderDisplay.h"  // drawMainScreen, displayBuffer
+#include "renderDisplay.h"  // drawMainScreen, flushToLcd
 #include "screens.h"        // screen state, touch areas, transitions
 #include "screens_draw.h"   // drawing for every screen but the board
 #include "settings.h"
 #include "../gfx/canvas.h"
-
-extern "C" {
-    #include "../C/lib/GUI/GUI_Paint.h"
-}
 
 #ifdef BUSTRACKER_HW
 extern "C" {
@@ -74,6 +70,7 @@ struct Options {
     std::string screen = "main";// --screen
     std::string fetchStop;      // --fetch
     time_t now = 0;             // --now (0 = real clock)
+    int ageSecs = 0;            // --age: render as if the data is this many seconds old
 };
 
 static bool parseOptions(int argc, char **argv, Options &o) {
@@ -84,6 +81,7 @@ static bool parseOptions(int argc, char **argv, Options &o) {
         else if (arg == "--fixture" && hasNext) o.fixturePath = argv[++i];
         else if (arg == "--screen" && hasNext) o.screen = argv[++i];
         else if (arg == "--fetch" && hasNext) o.fetchStop = argv[++i];
+        else if (arg == "--age" && hasNext) o.ageSecs = std::atoi(argv[++i]);
         else if (arg == "--now" && hasNext) {
             std::tm tm{};
             std::istringstream in(argv[++i]);
@@ -146,45 +144,35 @@ static bool loadFixtureBoard(const std::string &path, time_t now, StopBoard &out
 
 // ---------------------------------------------------------------------------
 // Drawing: one entry point for every screen, used by the display loop and by
-// snapshot mode, so the PNG is the frame the LCD gets.
+// snapshot mode, so the PNG is the frame the LCD gets. Frames are drawn as the
+// person sees them; flushToLcd does the panel's flip.
 
 // Sample stops for the picker in snapshot mode (no network needed).
 static const std::vector<std::string> kSampleStopNames = {
     "Princes Street", "Lothian Road", "Haymarket Station", "George Street",
     "North Bridge", "Morrison Street", "Tollcross"};
 
-// The LCD takes the buffer in panel order. Paint (the board) draws that way
-// already, through MIRROR_HORIZONTAL. Canvas draws in the order a person sees,
-// so its frames are flipped here. shortcut: a flip per frame, until
-// flushToLcd does it, when the board moves to Canvas too.
-static void mirrorRows(UWORD *buf, int w, int h) {
-    for (int y = 0; y < h; ++y) {
-        UWORD *row = buf + static_cast<size_t>(y) * w;
-        std::reverse(row, row + w);
-    }
+// Seconds since the board's data was fetched, or -1 if there is none. The error
+// screen shows it when it is recent.
+static long staleAgeSecs(const StopBoard &board, time_t now) {
+    return board.fetchedAt > 0 ? static_cast<long>(now - board.fetchedAt) : -1;
 }
 
-// Draws one frame into buf, in panel order, ready for displayBuffer.
-static void drawFrame(UWORD *buf, gfx::Canvas &c, Screen screen, StopDirection dir,
-                      ErrorReason reason, const StopBoard &board,
-                      const std::vector<std::string> &names, int retrySecs) {
-    if (screen == Screen::Board) {
-        drawMainScreen(buf, board);
-        return;
-    }
+static void drawFrame(gfx::Canvas &frame, Screen screen, StopDirection dir, ErrorReason reason,
+                      const StopBoard &board, const std::vector<std::string> &names,
+                      time_t now, long staleSecs, int retrySecs) {
     switch (screen) {
-    case Screen::Boot:      drawBootScreen(c, "Finding stops..."); break;
-    case Screen::Loading:   drawLoadingScreen(c, "Finding stops..."); break;
-    case Screen::Direction: drawDirectionScreen(c); break;
+    case Screen::Board:     drawMainScreen(frame, board, now); break;
+    case Screen::Boot:      drawBootScreen(frame, "Finding stops..."); break;
+    case Screen::Loading:   drawLoadingScreen(frame, "Finding stops..."); break;
+    case Screen::Direction: drawDirectionScreen(frame); break;
     case Screen::StopList:
-        drawStopListScreen(c, dir == StopDirection::Into ? "Into city" : "Out of city", names);
+        drawStopListScreen(frame, dir == StopDirection::Into ? "Into city" : "Out of city", names);
         break;
-    case Screen::Error:     drawErrorScreen(c, reason, retrySecs); break;
-    case Screen::Empty:     drawEmptyScreen(c, board.stopName); break;
-    case Screen::Asleep:    drawAsleepScreen(c); break;
-    case Screen::Board:     break;   // handled above
+    case Screen::Error:     drawErrorScreen(frame, reason, retrySecs, staleSecs); break;
+    case Screen::Empty:     drawEmptyScreen(frame, board.stopName); break;
+    case Screen::Asleep:    drawAsleepScreen(frame); break;
     }
-    mirrorRows(buf, c.width(), c.height());
 }
 
 // ---------------------------------------------------------------------------
@@ -235,19 +223,19 @@ static int runSnapshot(const Options &o) {
         }
     }
 
-    // Same Paint setup as the display loop, so the PNG is the buffer the LCD gets
+    // --age shows the same board as if its data were that many seconds old
+    const time_t frameNow = board.fetchedAt > 0 ? board.fetchedAt + o.ageSecs : now;
+    const long staleSecs = o.ageSecs > 0 ? o.ageSecs : -1;
+
     const int w = ST7796_WIDTH, h = ST7796_HEIGHT;
     UWORD *buffer = static_cast<UWORD *>(malloc(sizeof(UWORD) * w * h));
     if (!buffer) { std::cerr << "Out of memory\n"; return 1; }
-    Paint_NewImage(buffer, w, h, 0, BLACK, 16);
-    Paint_SetMirroring(MIRROR_HORIZONTAL);
-    Paint_Clear(BLACK);
+    gfx::Canvas frame(buffer, w, h);
 
-    gfx::Canvas canvas(buffer, w, h);
-    drawFrame(buffer, canvas, screen, StopDirection::Into, reason, board, kSampleStopNames, 42);
-    mirrorRows(buffer, w, h);   // the PNG shows the screen as a person sees it, not panel order
+    drawFrame(frame, screen, StopDirection::Into, reason, board, kSampleStopNames,
+              frameNow, staleSecs, 42);
 
-    bool ok = writePngRGB565(o.snapshotPath, buffer, w, h);
+    bool ok = writePngRGB565(o.snapshotPath, frame.data(), w, h);
     free(buffer);
     if (!ok) { std::cerr << "Could not write " << o.snapshotPath << "\n"; return 1; }
 
@@ -298,7 +286,7 @@ static long nowMs() {
     return static_cast<long>(duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
 }
 
-// Seconds until the next minute boundary (1..60): when the board refreshes.
+// Seconds until the next minute boundary (1..60): when the clock on screen changes.
 static int secondsToNextMinute() {
     time_t t = time(nullptr);
     int s = 60 - std::localtime(&t)->tm_sec;
@@ -326,21 +314,19 @@ static int runDisplay() {
 
     UWORD *buffer = static_cast<UWORD *>(malloc(sizeof(UWORD) * ST7796_WIDTH * ST7796_HEIGHT));
     if (!buffer) {
-        std::cerr << "Failed to allocate memory for image buffer" << std::endl;
+        std::cerr << "Failed to allocate memory for the frame" << std::endl;
         DEV_ModuleExit();
         return 1;
     }
-    Paint_NewImage(buffer, ST7796_WIDTH, ST7796_HEIGHT, 0, BLACK, 16);
-    Paint_SetMirroring(MIRROR_HORIZONTAL);
-    Paint_Clear(BLACK);
-    gfx::Canvas canvas(buffer, ST7796_WIDTH, ST7796_HEIGHT);
+    gfx::Canvas frame(buffer, ST7796_WIDTH, ST7796_HEIGHT);
 
     // What the state machine is driving, and the work it asks for
     UiState ui;
-    StopBoard board;
+    StopBoard board;                         // the board on screen, from the refresher
     BusStopInfo boardStop;                   // the stop on the board
+    std::string refreshedStopId;             // the stop the refresher is fetching
     std::vector<BusStopInfo> pick;           // stops for the direction being picked
-    BoardRefresher refresher;                // fetch policy: normal, backoff, key, last good data
+    BoardRefresher refresher;                // fetch policy, backoff, last good data
     touch_data_t touch;
     TapTracker taps;
     long lastTouchMs = nowMs();
@@ -354,9 +340,10 @@ static int runDisplay() {
     auto flush = [&]() {
         std::vector<std::string> names;
         for (const auto &s : pick) names.push_back(s.stopName);
-        drawFrame(buffer, canvas, ui.screen, ui.dir, ui.reason, board, names,
-                  secondsToNextMinute());
-        displayBuffer(buffer);
+        const time_t now = time(nullptr);
+        drawFrame(frame, ui.screen, ui.dir, ui.reason, board, names, now,
+                  staleAgeSecs(board, now), secondsToNextMinute());
+        flushToLcd(frame);
     };
 
     // Carry out the work an effect asks for; each result feeds back into the state machine.
@@ -364,8 +351,14 @@ static int runDisplay() {
         while (e.kind != Effect::None && e.kind != Effect::Sleep) {
             switch (e.kind) {
             case Effect::FetchBoard:
-                // A user-asked fetch: point the refresher at this stop and fetch now
-                refresher.setStops({boardStop.stopID});
+                // A user-asked fetch: fetch now. Same stop keeps its last good data;
+                // a different stop starts fresh.
+                if (refreshedStopId == boardStop.stopID) {
+                    refresher.refreshNow();
+                } else {
+                    refresher.setStops({boardStop.stopID});
+                    refreshedStopId = boardStop.stopID;
+                }
                 refresher.update(time(nullptr));
                 takeBoard();
                 e = onBoard(ui, board.status);
@@ -405,8 +398,8 @@ static int runDisplay() {
     };
 
     // Splash while the nearest stop is looked up; onBoot then fetches the first board
-    drawFrame(buffer, canvas, Screen::Boot, StopDirection::None, ErrorReason::None, board, {}, 0);
-    displayBuffer(buffer);
+    drawBootScreen(frame, "Finding stops...");
+    flushToLcd(frame);
     perform(Effect(Effect::Lookup, StopDirection::None));
 
     while (true) {
@@ -425,7 +418,8 @@ static int runDisplay() {
                 lastTouchMs = nowMs();
                 int arg = -1;
                 Action action = hitTest(ui.screen, ui.stopCount, tap.x, tap.y, arg);
-                std::cout << "Tap at (" << tap.x << ", " << tap.y << "): action " << static_cast<int>(action) << std::endl;
+                std::cout << "Tap at (" << tap.x << ", " << tap.y << "): action "
+                          << static_cast<int>(action) << std::endl;
                 if (action != Action::None) {
                     Effect e = step(ui, action, arg);
                     flush();                       // show "Finding stops..." before any network wait
@@ -440,8 +434,8 @@ static int runDisplay() {
                 Effect e = onIdle(ui);
                 if (e.kind == Effect::Sleep) {
                     std::cout << "No activity, turning the display off." << std::endl;
-                    canvas.clear(BLACK);
-                    displayBuffer(buffer);
+                    frame.clear(0);
+                    flushToLcd(frame);
                     st7796_sleep();
                     backlight_off();
 
@@ -455,13 +449,12 @@ static int runDisplay() {
                     backlight_on();
                     perform(step(ui, Action::Wake, 0));
                     lastTouchMs = nowMs();
-                    tapped = true;                 // refresh straight away
+                    tapped = true;                 // redraw straight away
                     break;
                 }
                 lastTouchMs = nowMs();             // menus stay up; restart the count
             }
         }
-
     }
 
     // Not reached: the loop above runs until the process is stopped

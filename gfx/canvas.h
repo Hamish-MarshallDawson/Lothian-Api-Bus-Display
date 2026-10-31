@@ -39,6 +39,9 @@ public:
     // Source-over blend of c with coverage alpha (255 = solid).
     void blendPixel(int x, int y, Color c, uint8_t alpha);
 
+    // Frame buffer, row-major, native RGB565, as the person sees it (not flipped).
+    const Color* data() const { return px_; }
+
 private:
     Rect clipped(Rect r) const;
 

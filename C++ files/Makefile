@@ -6,6 +6,7 @@ DIR_LCD = $(DIR_C_LIB)/lcd
 DIR_GUI = $(DIR_C_LIB)/GUI
 DIR_CONFIG = $(DIR_C_LIB)/Config
 DIR_FONTS = $(DIR_C_LIB)/Fonts
+DIR_GFX = ../gfx
 
 # The LCD and touch drivers need wiringPi. If its header is missing, busTrack
 # still builds without a display: --snapshot and --fetch work, the display loop
@@ -31,12 +32,13 @@ C_SOURCES = $(DIR_GUI)/GUI_Paint.c \
             $(DIR_FONTS)/font50.c \
             $(HW_SOURCES)
 
+# Anti-aliased canvas, baked fonts and widgets (gfx/), shared with lbd-ui-board
+GFX_SOURCES = $(DIR_GFX)/canvas.cpp $(DIR_GFX)/text.cpp $(DIR_GFX)/widgets.cpp
+
 # Library code shared by busTrack and the tests
-LIB_SOURCES = departures.cpp openmappull.cpp refresh.cpp png_write.cpp renderDisplay.cpp \
-              screens.cpp screens_draw.cpp
+LIB_SOURCES = departures.cpp timetables.cpp direction.cpp openmappull.cpp refresh.cpp \
+              png_write.cpp renderDisplay.cpp screens.cpp screens_draw.cpp $(GFX_SOURCES)
 CPP_SOURCES = busTrack.cpp $(LIB_SOURCES)
-# Anti-aliased canvas and baked fonts (gfx/), shared with lbd-ui-board
-GFX_SOURCES = ../gfx/canvas.cpp ../gfx/text.cpp
 
 # Compiler settings
 CC = gcc
@@ -46,19 +48,30 @@ CXXFLAGS = -Wall -O2 -MMD -MP -std=c++17 -I$(DIR_CONFIG) -I$(DIR_LCD) -I$(DIR_GU
 
 # Output
 TARGET = busTrack
-TEST = tests/refresh_test
+TEST_SCREENS = test_screens
+TESTS = tests/refresh_test tests/direction_test $(TEST_SCREENS)
 
 all: $(TARGET)
 
 # busTrack: display (if wiringPi), snapshot PNG, and one-stop fetch
-$(TARGET): $(C_SOURCES:.c=.o) $(CPP_SOURCES:.cpp=.o) $(GFX_SOURCES:.cpp=.o)
+$(TARGET): $(C_SOURCES:.c=.o) $(CPP_SOURCES:.cpp=.o)
 	$(CXX) $^ -o $@ $(HW_LIBS) -lcurl -lz -lm
 
-# Logic checks that need no display or network: refresh policy and the parser.
-# Run on the Pi from this folder: make test
-$(TEST): tests/refresh_test.o refresh.o departures.o
+# Logic checks that need no display or network. Run on the Pi from this folder: make test
+tests/refresh_test: tests/refresh_test.o refresh.o departures.o
 	$(CXX) $^ -o $@ -lcurl -lm
 
+tests/direction_test: tests/direction_test.o direction.o timetables.o
+	$(CXX) $^ -o $@ -lcurl -lm
+
+# Screen state, transitions and touch hit areas (screens.cpp, no drawing)
+$(TEST_SCREENS): test_screens.cpp screens.cpp screens.h departures.h
+	$(CXX) -Wall -Wextra -O1 -std=c++17 test_screens.cpp screens.cpp -o $@
+
+test: $(TESTS)
+	./tests/refresh_test
+	./tests/direction_test
+	./$(TEST_SCREENS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -66,20 +79,11 @@ $(TEST): tests/refresh_test.o refresh.o departures.o
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-# Self-check for the screen state and touch logic. No hardware or network needed.
-TEST_SCREENS = test_screens
-$(TEST_SCREENS): test_screens.cpp screens.cpp screens.h departures.h
-	$(CXX) -Wall -Wextra -O1 -std=c++17 test_screens.cpp screens.cpp -o $@
-
-test: $(TEST) $(TEST_SCREENS)
-	./$(TEST)
-	./$(TEST_SCREENS)
-
-
 clean:
-	rm -f $(TARGET) $(TEST) $(TEST_SCREENS) *.o *.d tests/*.o tests/*.d ../gfx/*.o $(DIR_LCD)/*.o $(DIR_GUI)/*.o $(DIR_CONFIG)/*.o $(DIR_FONTS)/*.o \
+	rm -f $(TARGET) $(TESTS) *.o *.d tests/*.o tests/*.d $(DIR_GFX)/*.o $(DIR_GFX)/*.d \
+	      $(DIR_LCD)/*.o $(DIR_GUI)/*.o $(DIR_CONFIG)/*.o $(DIR_FONTS)/*.o \
 	      $(DIR_LCD)/*.d $(DIR_GUI)/*.d $(DIR_CONFIG)/*.d $(DIR_FONTS)/*.d
 
 .PHONY: all test clean
 
--include $(wildcard *.d tests/*.d) $(wildcard $(DIR_GUI)/*.d $(DIR_FONTS)/*.d)
+-include $(wildcard *.d tests/*.d $(DIR_GFX)/*.d) $(wildcard $(DIR_GUI)/*.d $(DIR_FONTS)/*.d)
