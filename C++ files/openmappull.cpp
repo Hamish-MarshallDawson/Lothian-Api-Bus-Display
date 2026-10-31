@@ -5,14 +5,10 @@
 #include "config_utils.h"
 #include "openmappull.h"
 #include "busStopInfo.h"
+#include "apiHttp.h"
 
 #include <iostream>
-#include "config.h"
-#include "config_utils.h"
-#include "openmappull.h"
-#include "busStopInfo.h"
-
-#include <iostream>
+#include <ctime>
 #include <string>
 #include <vector>
 #include <curl/curl.h>
@@ -66,19 +62,45 @@ static std::string httpGetWithUA(const std::string &url) {
     return response;
 }
 
-// Cached copy of the Lothian stops list to avoid fetching it repeatedly.
-// Load once on demand and reuse for subsequent calls to getNearestStops()/grouping.
+// Cached copy of the stops list to avoid fetching it repeatedly.
+// GetActiveStops is scoped to a single date, so the cache is keyed by date and
+// refreshes itself after midnight.
 static json g_cachedStopsArray = json::array();
+static std::string g_cachedStopsDate;
+
+static std::string todayLocalDate() {
+    time_t now = time(nullptr);
+    struct tm tmv;
+    localtime_r(&now, &tmv);
+    char buf[16];
+    strftime(buf, sizeof(buf), "%Y-%m-%d", &tmv);
+    return std::string(buf);
+}
 
 static bool ensureStopsCache() {
-    if (!g_cachedStopsArray.empty()) return true;
-    std::string url = API_CONFIG().baseURL + API_CONFIG().stopsEndpoint;
-    std::string stopsBody = httpGetWithUA(url);
-    if (stopsBody.empty()) return false;
+    const std::string today = todayLocalDate();
+    if (!g_cachedStopsArray.empty() && g_cachedStopsDate == today) return true;
+
+    // Date is a required parameter on GetActiveStops. FullDetails gives us the
+    // coordinate block rather than bare codes.
+    std::string url = API_CONFIG().baseURL + API_CONFIG().activeStopsEndpoint
+                    + "?Date=" + today
+                    + "&FullDetails=true";
+
+    std::string stopsBody;
+    long httpCode = 0;
+    if (!apiHttpGet(url, stopsBody, httpCode) || stopsBody.empty()) return false;
+
     try {
         auto doc = json::parse(stopsBody);
-        if (!(doc.contains("stops") && doc["stops"].is_array())) return false;
+        if (!(doc.contains("stops") && doc["stops"].is_array())) {
+            std::cerr << "ensureStopsCache: response had no 'stops' array" << std::endl;
+            return false;
+        }
         g_cachedStopsArray = doc["stops"];
+        g_cachedStopsDate = today;
+        std::cerr << "ensureStopsCache: loaded " << g_cachedStopsArray.size()
+                  << " stops for " << today << std::endl;
         return true;
     } catch (const std::exception &e) {
         std::cerr << "ensureStopsCache parse error: " << e.what() << std::endl;
@@ -129,78 +151,47 @@ bool getNearestStops(const std::string &address, int maxStops, std::vector<BusSt
 
     // Use cached stops array when available to avoid repeated HTTP fetches
     if (!ensureStopsCache()) return false;
-    struct Tmp { std::string id; std::string name; double lat; double lon; double dist; };
+    struct Tmp { std::string atco; std::string naptan; std::string name; double lat; double lon; double dist; };
     std::vector<Tmp> tmp;
     for(auto &el : g_cachedStopsArray) {
-            if(!el.contains("latitude") || !el.contains("longitude")) continue;
-            Tmp s;
-            if(el.contains("stop_id")) {
-                if(el["stop_id"].is_string()) s.id = el["stop_id"].get<std::string>();
-                else s.id = std::to_string(el.value("stop_id", 0));
-            }
-            s.name = el.value("name", std::string("(no name)"));
-            s.lat = el.value("latitude", 0.0);
-            s.lon = el.value("longitude", 0.0);
-            s.dist = haversine(lat, lon, s.lat, s.lon);
-            tmp.push_back(s);
-        }
-        if(tmp.empty()) return false;
-        std::sort(tmp.begin(), tmp.end(), [](const Tmp &a, const Tmp &b){ return a.dist < b.dist; });
-        // maxstops is duplicated to allow for return of busses that go into the city and out of the city
-        int n = std::min((int)tmp.size(), maxStops*2);
-        outStops.reserve(n);
-        for(int i=0;i<n;++i) {
-            BusStopInfo b;
-            b.stopID = tmp[i].id;
-            b.stopName = tmp[i].name;
-            b.latitude = std::to_string(tmp[i].lat);
-            b.longitude = std::to_string(tmp[i].lon);
-            b.destination = tmp[i].name;
-            b.services = "";
-            // Attempt to capture any direction/towards/orientation info from the original JSON
-            // Re-fetch the corresponding JSON element by stop_id to extract optional fields
-            try {
-                for(auto &el : g_cachedStopsArray) {
-                    std::string sid;
-                    if(el.contains("stop_id")) {
-                        if(el["stop_id"].is_string()) sid = el["stop_id"].get<std::string>();
-                        else sid = std::to_string(el.value("stop_id", 0));
-                    }
-                    if(sid == b.stopID) {
-                        // look for common direction fields
-                                if(el.contains("towards")) {
-                                    if(el["towards"].is_string()) b.direction = el["towards"].get<std::string>();
-                                    else if(el["towards"].is_object()) b.direction = el["towards"].value("description", "");
-                                }
-                                // orientation is numeric degrees if present
-                                if(el.contains("orientation")) {
-                                    if(el["orientation"].is_number()) {
-                                        b.orientation_deg = el["orientation"].get<double>();
-                                    } else if(el["orientation"].is_string()) {
-                                        try { b.orientation_deg = std::stod(el["orientation"].get<std::string>()); } catch(...) {}
-                                    }
-                                    // If no textual direction was set, use compass direction if provided
-                                    if(b.direction.empty() && el.contains("direction") && el["direction"].is_string()) {
-                                        b.direction = el["direction"].get<std::string>();
-                                    }
-                                } else {
-                                    if(b.direction.empty() && el.contains("orientation") && el["orientation"].is_string()) {
-                                        if(el["orientation"].is_string()) b.direction = el["orientation"].get<std::string>();
-                                    }
-                                    if(b.direction.empty() && el.contains("direction")) {
-                                        if(el["direction"].is_string()) b.direction = el["direction"].get<std::string>();
-                                        else if(el["direction"].is_object()) b.direction = el["direction"].value("description", "");
-                                    }
-                                }
-                        break;
-                    }
-                }
-            } catch(...) {}
-            outStops.push_back(b);
-        }
+        // Coordinates are nested under "coordinate" in the Novus schema; the
+        // old flat latitude/longitude fields no longer exist.
+        if(!el.contains("coordinate") || !el["coordinate"].is_object()) continue;
+        const auto &coord = el["coordinate"];
+        if(!coord.contains("latitude") || !coord.contains("longitude")) continue;
 
-        return true;
+        Tmp s;
+        s.atco   = el.value("atcocode", std::string());
+        s.naptan = el.value("NAPTAN", std::string());
+        if(s.atco.empty()) continue;               // atcocode is the stop key now
+        s.name = el.value("name", std::string("(no name)"));
+        s.lat  = coord.value("latitude", 0.0);
+        s.lon  = coord.value("longitude", 0.0);
+        s.dist = haversine(lat, lon, s.lat, s.lon);
+        tmp.push_back(s);
     }
+    if(tmp.empty()) return false;
+    std::sort(tmp.begin(), tmp.end(), [](const Tmp &a, const Tmp &b){ return a.dist < b.dist; });
+    // maxstops is duplicated to allow for return of busses that go into the city and out of the city
+    int n = std::min((int)tmp.size(), maxStops*2);
+    outStops.reserve(n);
+    for(int i=0;i<n;++i) {
+        BusStopInfo b;
+        b.stopID     = tmp[i].atco;      // ATCO code, what StopEvents expects
+        b.identifier = tmp[i].naptan;    // NAPTAN / SMS code, printed on the stop pole
+        b.stopName   = tmp[i].name;
+        b.latitude   = std::to_string(tmp[i].lat);
+        b.longitude  = std::to_string(tmp[i].lon);
+        b.destination = tmp[i].name;
+        b.services   = "";
+        // The Novus stop record carries no towards/orientation/direction fields,
+        // so b.direction stays empty and getNearestStopsGrouped() falls back to
+        // the bearing-to-centre heuristic.
+        outStops.push_back(b);
+    }
+
+    return true;
+}
 
 // Convert degrees to radians
 static double toRadians(double degrees) {

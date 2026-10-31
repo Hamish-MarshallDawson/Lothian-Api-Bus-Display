@@ -39,6 +39,7 @@ using json = nlohmann::json;
 #include "busStopInfo.h"
 #include "openmappull.h"    // for GroupedStops, getNearestStopsGrouped
 #include "config.h"         // access to CONFIG_ADDRESS(), CITY_CENTER_LAT/LON if needed
+#include "apiHttp.h"        // apiHttpGet(): adds the Ocp-Apim-Subscription-Key header
 
 // Display API and shared UI state (implemented in renderDisplay.cpp)
 #include "renderDisplay.h"
@@ -86,74 +87,64 @@ size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
 //     std::cout << "----------------------------------------\n" << std::endl;
 // }
 
-std::string buildAPIUrl(const BusAPIConfig& config, const std::string& endpoint, const std::string& parameter =""){
-    return config.baseURL + endpoint + parameter;
+// The Novus Open API takes the stop identifier as a query parameter, not as a
+// path segment the way tfe-opendata did. Build the whole query string here.
+std::string buildStopEventsUrl(const BusAPIConfig& config, const std::string& atcoCode){
+    return config.baseURL + config.stopEventsEndpoint
+         + "?atcoCode=" + atcoCode
+         + "&eventType=departure"
+         + "&ordering=SchDep"
+         + "&timeFormat=Local"
+         + "&doCountdown=true"
+         + "&lookahead=" + std::to_string(CONFIG_LOOKAHEAD_MINS())
+         + "&maxEvents=" + std::to_string(CONFIG_MAX_EVENTS());
 }
 
 std::string fetchLiveBusTimes(const std::string& stopID){
-    //points to curl object
-    CURL* curl; 
-    //Result from curl, error or not
-    CURLcode res;
-    //where response is stored
+    // All the curl plumbing, the subscription-key header and the HTTP status
+    // checking now live in apiHttpGet() so openmappull can share them.
+    BusAPIConfig &apiConf = API_CONFIG();
+    std::string url = buildStopEventsUrl(apiConf, stopID);
+
     std::string response;
-
-    //initialize curl
-    curl = curl_easy_init();
-
-    //works like bool, if curl initialized properly
-    if(curl) {
-
-        // Use the global API config
-        BusAPIConfig &apiConf = API_CONFIG();
-
-        // build URL for live times
-        std::string url = buildAPIUrl(apiConf, apiConf.liveBusTimesEndpoint, stopID);
-
-        //tells curl what url to use 
-        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-
-        // points to my write callback function
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-        // stores the data in response string
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-
-    // set user agent and actually do the call
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, USER_AGENT().c_str());
-        res = curl_easy_perform(curl);
-
-        // error checking
-        if(res != CURLE_OK) {
-            //if error happens prints to console what issues happened
-            std::cerr << "Error fetching bus times: " << curl_easy_strerror(res) << std::endl;
-        }
-
-        // frees up memory
-        curl_easy_cleanup(curl);
+    long httpCode = 0;
+    if(!apiHttpGet(url, response, httpCode)) {
+        // apiHttpGet already logged the reason (401, 429, timeout, and so on)
+        return std::string();
     }
-
     return response;
 }
 
 void parseAPIResponse(const std::string& jsonResponse) {
     try {
-
         json busData = json::parse(jsonResponse);
-        // The API returns an array of routes
-        for(auto& route : busData) {
-            std::string routeName = route["routeName"];
-            std::cout << "Route: " << routeName << std::endl;
-            
-            // Each route has departures
-            for(auto& departure : route["departures"]) {
-                std::string destination = departure["destination"];
-                std::string displayTime = departure["displayTime"];
-                bool isLive = departure["isLive"];
-                
-                std::cout << "  -> " << destination 
-                          << " at " << displayTime
-                          << " (Live GPS: " << (isLive ? "Yes" : "No") << ")"
-                          << std::endl;
+        // StopEvents returns an array of per-stop objects, each holding an
+        // "events" array. There is no routes -> departures nesting any more.
+        for(const auto& stopObj : busData) {
+            std::cout << "Stop: " << stopObj.value("name", "(unnamed)")
+                      << " [" << stopObj.value("atcocode", "") << "]" << std::endl;
+
+            if(!stopObj.contains("events") || !stopObj["events"].is_array()) continue;
+
+            for(const auto& ev : stopObj["events"]) {
+                std::string service     = ev.value("publicservicename", "?");
+                std::string destination = ev.value("destination", "Unknown");
+                std::string scheduled   = ev.value("scheduledeparturetime", "");
+                std::string status      = ev.value("status", "");
+
+                std::cout << "  -> " << service << " to " << destination
+                          << " sched " << scheduled;
+
+                // departuretime is either seconds-to-go (int) or a date-time (string)
+                if(ev.contains("departuretime") && !ev["departuretime"].is_null()) {
+                    if(ev["departuretime"].is_number_integer()) {
+                        std::cout << " live in " << (ev["departuretime"].get<int>() / 60) << " min";
+                    } else if(ev["departuretime"].is_string()) {
+                        std::cout << " live at " << ev["departuretime"].get<std::string>();
+                    }
+                }
+                if(!status.empty()) std::cout << " [" << status << "]";
+                std::cout << std::endl;
             }
         }
     }

@@ -68,3 +68,8 @@ obj/
 
 
 config.h
+
+# Local agent and tool scratch (API spec is for authorised users only)
+.agents/
+.worktrees/
+.playwright-mcp/

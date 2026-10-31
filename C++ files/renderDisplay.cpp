@@ -228,6 +228,41 @@ void drawDropdownFromGrouped() {
     }
 }
 
+// Resolve a Novus event time field into "minutes from now".
+//
+// The API returns either:
+//   - an integer: seconds until the event, used inside the countdown window
+//   - a string:   a date-time (local, because we request timeFormat=Local)
+//   - null:       no prediction available
+// Returns false when nothing usable could be read.
+static bool eventTimeToMinutesFromNow(const json &field, int currentMinutes, int &outMinutes) {
+    if(field.is_null()) return false;
+
+    if(field.is_number_integer()) {
+        outMinutes = field.get<int>() / 60;
+        return true;
+    }
+    if(!field.is_string()) return false;
+
+    const std::string s = field.get<std::string>();
+    // Accept both "2026-08-24T17:42:00" and a bare "17:42".
+    size_t tpos = s.find('T');
+    size_t hpos = (tpos == std::string::npos) ? 0 : tpos + 1;
+    if(s.size() < hpos + 5) return false;
+
+    try {
+        int hour   = std::stoi(s.substr(hpos, 2));
+        int minute = std::stoi(s.substr(hpos + 3, 2));
+        int delta  = (hour * 60 + minute) - currentMinutes;
+        // A large negative delta means the event is tomorrow, not in the past.
+        if(delta < -180) delta += 1440;
+        outMinutes = delta;
+        return true;
+    } catch(...) {
+        return false;
+    }
+}
+
 void drawMainScreen(UWORD *image, const BusStopInfo &currentStop, const json &busData) {
     // Clear Paint buffer (not the physical screen)
     Paint_Clear(GRAY);
@@ -277,34 +312,50 @@ void drawMainScreen(UWORD *image, const BusStopInfo &currentStop, const json &bu
     struct BusDeparture {
         std::string routeName;
         std::string destination;
-        std::string time;
-        int minutesSinceMidnight;
+        int minutesUntil;   // minutes from now, already resolved
+        bool isLive;        // true when a real-time prediction was supplied
+        bool cancelled;
     };
     std::vector<BusDeparture> allDepartures;
 
-    for(const auto& route : busData) {
-        std::string routeName = route.value("routeName", "");
-        if(!route.contains("departures") || !route["departures"].is_array()) continue;
-        for(const auto& dep : route["departures"]) {
+    // StopEvents returns an array of per-stop objects; each holds an "events"
+    // array. Every event carries the service name directly, so the old
+    // routes -> departures nesting is gone.
+    for(const auto& stopObj : busData) {
+        if(!stopObj.contains("events") || !stopObj["events"].is_array()) continue;
+
+        for(const auto& ev : stopObj["events"]) {
             BusDeparture busDep;
-            busDep.routeName = routeName;
-            busDep.destination = dep.value("destination", "Unknown");
-            std::string localTime = dep.value("ineoUTCTime", "");
-            if(localTime.length() >= 5) {
-                busDep.time = localTime.substr(0,5);
-                try {
-                    int hour = std::stoi(localTime.substr(0,2));
-                    int minute = std::stoi(localTime.substr(3,2));
-                    busDep.minutesSinceMidnight = hour * 60 + minute;
-                    if(busDep.minutesSinceMidnight < 360 && currentMinutes > 1080) busDep.minutesSinceMidnight += 1440;
-                } catch(...) { busDep.minutesSinceMidnight = 9999; }
-            } else { busDep.time = "??:??"; busDep.minutesSinceMidnight = 9999; }
+            busDep.routeName   = ev.value("publicservicename", "");
+            busDep.destination = ev.value("destination", "Unknown");
+            busDep.cancelled   = (ev.value("status", "") == "cancelled");
+            busDep.isLive      = false;
+
+            int mins = 0;
+            bool haveTime = false;
+
+            // Prefer the real-time prediction. Note it is polymorphic: an
+            // integer means seconds-to-go (inside the countdown window),
+            // a string means a date-time.
+            if(ev.contains("departuretime")) {
+                haveTime = eventTimeToMinutesFromNow(ev["departuretime"], currentMinutes, mins);
+                busDep.isLive = haveTime;
+            }
+            // Fall back to the timetable if there is no live prediction.
+            if(!haveTime && ev.contains("scheduledeparturetime")) {
+                haveTime = eventTimeToMinutesFromNow(ev["scheduledeparturetime"], currentMinutes, mins);
+            }
+
+            if(!haveTime) continue;
+            if(busDep.cancelled) continue;
+
+            busDep.minutesUntil = mins;
             allDepartures.push_back(busDep);
         }
     }
 
     std::sort(allDepartures.begin(), allDepartures.end(), [](const BusDeparture& a, const BusDeparture& b){
-        return a.minutesSinceMidnight < b.minutesSinceMidnight;
+        return a.minutesUntil < b.minutesUntil;
     });
 
     // Debug output
@@ -363,8 +414,8 @@ void drawMainScreen(UWORD *image, const BusStopInfo &currentStop, const json &bu
         }
 
         // Draw time or "DUE"
-        int minutesUntilBus = bus.minutesSinceMidnight - currentMinutes;
-        if(minutesUntilBus < 0) minutesUntilBus += 1440;
+        int minutesUntilBus = bus.minutesUntil;
+        if(minutesUntilBus < 0) minutesUntilBus = 0;
 
         if(minutesUntilBus <= 2 && minutesUntilBus >= -2) {
             Paint_DrawString_EN(TIME_X, yPos + 4, "DUE", &Font48, RED, WHITE);
