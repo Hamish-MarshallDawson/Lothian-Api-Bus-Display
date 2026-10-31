@@ -239,13 +239,38 @@ static void testBuildTrackStates() {
         CHECK(t.state == TrackState::Stale);
         CHECK(t.stopsAway == 2 - 1);   // my C (2), next B (1)
     }
-    // No vehicle for this journey yet: not started
+    // No vehicle, and the trip's start (16:00) is still ahead: not started
     {
         VehicleFeed feed;
         feed.watch("J1");
-        BusTrack t = buildTrack(synthDeparture("J1"), my, trip, feed, now);
+        BusTrack t = buildTrack(synthDeparture("J1"), my, trip, feed,
+                                localTime(2026, 10, 31, 15, 50, 0));
         CHECK(t.state == TrackState::NotStarted);
         CHECK(t.stops.size() == 4);
+    }
+    // No vehicle, and the start has passed: no live position, not "not started"
+    {
+        VehicleFeed feed;
+        feed.watch("J1");
+        BusTrack t = buildTrack(synthDeparture("J1"), my, trip, feed, now);   // 16:10, start 16:00
+        CHECK(t.state == TrackState::Unavailable);
+    }
+    // The bug seen live: a trip that started at 16:27, looked at at 17:09 with no
+    // matching vehicle, must read Unavailable, not NotStarted
+    {
+        std::vector<TrackStop> late = trip;
+        for (auto &s : late) {
+            if (s.scheduled == "16:00") s.scheduled = "16:27";
+            if (s.scheduled == "16:05") s.scheduled = "16:32";
+            if (s.scheduled == "16:10") s.scheduled = "16:37";
+            if (s.scheduled == "16:15") s.scheduled = "16:42";
+        }
+        VehicleFeed feed;
+        feed.watch("J1");
+        BusTrack t = buildTrack(synthDeparture("J1"), my, late, feed, localTime(2026, 10, 31, 17, 9, 0));
+        CHECK(t.state == TrackState::Unavailable);
+        BusTrack before = buildTrack(synthDeparture("J1"), my, late, feed, localTime(2026, 10, 31, 16, 10, 0));
+        CHECK(before.state == TrackState::NotStarted);   // the same trip, before its 16:27 start
     }
     // No timetable trip at all: unavailable
     {
