@@ -40,7 +40,7 @@ CXXFLAGS = -Wall -O2 -MMD -MP -std=c++17 -I$(DIR_CONFIG) -I$(DIR_LCD) $(HW_CXXFL
 # Output
 TARGET = busTrack
 TEST_SCREENS = test_screens
-TESTS = tests/refresh_test tests/direction_test tests/live_format_test $(TEST_SCREENS)
+TESTS = tests/refresh_test tests/direction_test tests/live_format_test tests/tracking_test $(TEST_SCREENS)
 
 all: $(TARGET)
 
@@ -53,6 +53,9 @@ tests/refresh_test: tests/refresh_test.o refresh.o departures.o
 	$(CXX) $^ -o $@ -lcurl -lm
 
 tests/direction_test: tests/direction_test.o direction.o timetables.o diskcache.o
+	$(CXX) $^ -o $@ -lcurl -lm
+
+tests/tracking_test: tests/tracking_test.o tracking.o openmappull.o direction.o timetables.o departures.o diskcache.o tiles.o
 	$(CXX) $^ -o $@ -lcurl -lm
 
 tests/live_format_test: tests/live_format_test.o departures.o timetables.o diskcache.o
@@ -70,10 +73,19 @@ picker-live: tests/picker_live
 tests/picker_live: tests/picker_live.o openmappull.o direction.o timetables.o departures.o diskcache.o refresh.o
 	$(CXX) $^ -o $@ -lcurl -lm
 
+# Dev-only: bus tracking and tile cache against the live API (needs the key and
+# BUS_HOME_* or BUS_ADDRESS). Give one city-centre ATCO code. Not part of make test.
+track-live: tests/track_live
+	./tests/track_live $(STOP)
+
+tests/track_live: tests/track_live.o openmappull.o direction.o timetables.o departures.o diskcache.o tracking.o tiles.o
+	$(CXX) $^ -o $@ -lcurl -lm
+
 test: $(TESTS)
 	./tests/refresh_test
 	./tests/direction_test
 	./tests/live_format_test
+	./tests/tracking_test
 	./$(TEST_SCREENS)
 
 %.o: %.c
@@ -86,6 +98,6 @@ clean:
 	rm -f $(TARGET) $(TESTS) *.o *.d tests/*.o tests/*.d $(DIR_GFX)/*.o $(DIR_GFX)/*.d \
 	      $(DIR_LCD)/*.o $(DIR_CONFIG)/*.o $(DIR_LCD)/*.d $(DIR_CONFIG)/*.d
 
-.PHONY: all test clean picker-live
+.PHONY: all test clean picker-live track-live
 
 -include $(wildcard *.d tests/*.d $(DIR_GFX)/*.d)

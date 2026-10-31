@@ -12,6 +12,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <chrono>
+#include <thread>
 #include <ctime>
 #include <iostream>
 #include <map>
@@ -96,7 +98,12 @@ static json &geocodeStore() {
     return store;
 }
 
+// Address to coordinates, the fallback used only without BUS_HOME_LAT/LON. Policy
+// (Nominatim usage): the result is cached forever on disk, at most one request per
+// second, and after any failure nothing is sent for an hour. The address is
+// personal data: it is hashed in the cache and never logged.
 static bool geocode(const std::string &address, LatLon &out) {
+    if (address.empty()) return false;
     json &store = geocodeStore();
     const std::string key = addressKey(address);
     auto hit = store.find(key);
@@ -105,11 +112,25 @@ static bool geocode(const std::string &address, LatLon &out) {
         return true;
     }
 
+    // Back off for an hour after a failure
+    const std::string failKey = key + "-failed";
+    const time_t now = time(nullptr);
+    auto failed = store.find(failKey);
+    if (failed != store.end() && failed->is_number() && now - failed->get<long long>() < 3600) {
+        return false;
+    }
+
+    // At most one request per second
+    static time_t lastRequest = 0;
+    if (lastRequest != 0 && now - lastRequest < 1) {
+        std::this_thread::sleep_for(std::chrono::seconds(1 - (now - lastRequest)));
+    }
+    lastRequest = time(nullptr);
+
     CURL *curl = curl_easy_init();
     if (!curl) return false;
     char *enc = curl_easy_escape(curl, address.c_str(), static_cast<int>(address.size()));
-    std::string url = "https://nominatim.openstreetmap.org/search?q=" + std::string(enc ? enc : "")
-                    + "&format=json&limit=1";
+    std::string url = GEOCODER_URL() + "?q=" + std::string(enc ? enc : "") + "&format=json&limit=1";
     if (enc) curl_free(enc);
 
     std::string body;
@@ -122,23 +143,40 @@ static bool geocode(const std::string &address, LatLon &out) {
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
     CURLcode res = curl_easy_perform(curl);
     curl_easy_cleanup(curl);
-    if (res != CURLE_OK) {
-        std::cerr << "geocode: " << curl_easy_strerror(res) << std::endl;
-        return false;
-    }
 
+    auto fail = [&]() {
+        store[failKey] = static_cast<long long>(now);
+        diskcache::save("geocode.json", store);
+        return false;
+    };
+    if (res != CURLE_OK) {
+        std::cerr << "geocode: request failed (" << curl_easy_strerror(res) << ")" << std::endl;
+        return fail();
+    }
     try {
         auto arr = json::parse(body);
-        if (!arr.is_array() || arr.empty()) return false;
+        if (!arr.is_array() || arr.empty()) return fail();
         LatLon ll{std::stod(jstr(arr[0], "lat")), std::stod(jstr(arr[0], "lon"))};
         store[key] = json{{"lat", ll.lat}, {"lon", ll.lon}};
+        store.erase(failKey);
         diskcache::save("geocode.json", store);
         out = ll;
         return true;
-    } catch (const std::exception &e) {
-        std::cerr << "geocode parse error: " << e.what() << std::endl;
-        return false;
+    } catch (const std::exception &) {
+        std::cerr << "geocode: unreadable reply" << std::endl;
+        return fail();
     }
+}
+
+// Where home is: the configured home position if there is one (no network), else
+// the address geocoded.
+static bool homePosition(const std::string &address, LatLon &out) {
+    double la = 0.0, lo = 0.0;
+    if (HOME_POSITION(la, lo)) {
+        out = LatLon{la, lo};
+        return true;
+    }
+    return geocode(address, out);
 }
 
 // ---------------------------------------------------------------------------
@@ -154,11 +192,27 @@ static std::map<std::string, LatLon> g_stopAt;  // atco -> position, from g_stop
 static std::string g_stopsDate;
 static time_t g_stopsRetryAt = 0;
 
+static std::map<std::string, std::string> g_stopName;  // atco -> name, from g_stops
+static bool ensureStops();
+
 static void setStops(const std::vector<StopRec> &stops, const std::string &date) {
     g_stops = stops;
     g_stopAt.clear();
-    for (const auto &s : g_stops) g_stopAt[s.atco] = s.at;
+    g_stopName.clear();
+    for (const auto &s : g_stops) {
+        g_stopAt[s.atco] = s.at;
+        g_stopName[s.atco] = s.name;
+    }
     g_stopsDate = date;
+}
+
+bool stopByCode(const std::string &atco, std::string &name, LatLon &at) {
+    if (!ensureStops()) return false;
+    auto it = g_stopAt.find(atco);
+    if (it == g_stopAt.end()) return false;
+    at = it->second;
+    name = g_stopName[atco];
+    return true;
 }
 
 // Today's list from ~/.cache/bustracker/stops-<date>.json. Stored compactly as
@@ -299,7 +353,9 @@ static StopDirection timetableDirection(const std::string &atco) {
     }
 
     // A timetable answer holds for the day. A failure is retried after 10 minutes.
-    const bool final = res.dir != Direction::Unknown || ok;
+    // Only a decided direction holds for the day. "No trips in this window" is
+    // retried later, when the window has moved on.
+    const bool final = res.dir != Direction::Unknown;
     store[atco] = json{{"dir", static_cast<int>(res.dir)}, {"how", res.how},
                        {"final", final}, {"retryAt", static_cast<long long>(now + 600)}};
     diskcache::save("direction-" + today + ".json", store);
@@ -313,7 +369,7 @@ static StopDirection timetableDirection(const std::string &atco) {
 // stop list download. The home position is never printed.
 int stopDistanceFromHomeM(const std::string &atco) {
     LatLon home;
-    if (CONFIG_ADDRESS().empty() || !geocode(CONFIG_ADDRESS(), home)) return -1;
+    if (!homePosition(CONFIG_ADDRESS(), home)) return -1;
     if (!ensureStops()) return -1;
     auto it = g_stopAt.find(atco);
     if (it == g_stopAt.end()) return -1;
@@ -323,7 +379,7 @@ int stopDistanceFromHomeM(const std::string &atco) {
 bool getNearestStops(const std::string &address, int maxStops, std::vector<BusStopInfo> &outStops) {
     outStops.clear();
     LatLon here;
-    if (!geocode(address, here)) return false;
+    if (!homePosition(address, here)) return false;
     if (!ensureStops()) return false;
 
     struct Near { const StopRec *s; double dist; };
@@ -361,7 +417,7 @@ bool getNearestStopsGrouped(const std::string &address, int perGroup, GroupedSto
     out.intoCity.clear();
     out.outOfCity.clear();
     LatLon here;
-    if (!geocode(address, here)) return false;
+    if (!homePosition(address, here)) return false;
 
     // Nearest stops first; stop as soon as both groups are full
     std::vector<BusStopInfo> pool;
@@ -392,7 +448,53 @@ bool getNearestStopsGrouped(const std::string &address, int perGroup, GroupedSto
     return true;
 }
 
-// Stub for the API commit. Implemented in M7.
-bool pairedStop(const BusStopInfo &, Direction, BusStopInfo &) {
-    return false;
+// The other side of the road from "current": the nearest stop within 300 m whose
+// timetable direction is "want", preferring the same stop name. A stop already in
+// "want" is returned as it is. Stops whose direction is unknown are never chosen.
+bool pairedStop(const BusStopInfo &current, Direction want, BusStopInfo &out) {
+    if (!ensureStops()) return false;
+
+    LatLon cur{0.0, 0.0};
+    auto here = g_stopAt.find(current.stopID);
+    if (here != g_stopAt.end()) {
+        cur = here->second;
+    } else {
+        try {
+            cur = LatLon{std::stod(current.latitude), std::stod(current.longitude)};
+        } catch (const std::exception &) {
+            return false;
+        }
+    }
+
+    if (timetableDirection(current.stopID).dir == want) {
+        out = current;
+        return true;
+    }
+
+    const StopRec *best = nullptr;
+    double bestD = 1e18;
+    bool bestSameName = false;
+    for (const auto &s : g_stops) {
+        if (s.atco == current.stopID) continue;
+        const double d = distanceM(cur, s.at);
+        if (d > 300.0) continue;
+        if (timetableDirection(s.atco).dir != want) continue;
+        const bool sameName = (s.name == current.stopName);
+        const bool better = !best || (sameName && !bestSameName) || (sameName == bestSameName && d < bestD);
+        if (better) {
+            best = &s;
+            bestD = d;
+            bestSameName = sameName;
+        }
+    }
+    if (!best) return false;
+
+    out = BusStopInfo();
+    out.stopID = best->atco;
+    out.identifier = best->naptan;
+    out.stopName = best->name;
+    out.latitude = std::to_string(best->at.lat);
+    out.longitude = std::to_string(best->at.lon);
+    out.destination = best->name;
+    return true;
 }

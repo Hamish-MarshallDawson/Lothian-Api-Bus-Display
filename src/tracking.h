@@ -2,8 +2,8 @@
 #define TRACKING_H
 
 // Where a departure's bus is: its trip, position, how far from my stop, and how
-// late it is. Built from the departure, the trip's timetable and the live vehicle
-// feed. Matching is by journey id only (vehicle.journeyid == departure.journeyId).
+// late it is. Built from the departure, the trip's timetable and the live vehicle.
+// Matching is by journey id only (vehicle.journeyid == departure.journeyId).
 
 #include <ctime>
 #include <string>
@@ -12,6 +12,8 @@
 
 #include "departures.h"
 #include "busStopInfo.h"
+#include "direction.h"
+#include "timetables.h"
 
 struct TrackStop {
     std::string atco;
@@ -48,8 +50,9 @@ struct BusTrack {
     std::vector<std::pair<time_t, int>> lateHistory;  // (time, lateMin) observed while watched
 };
 
-// One vehicle from GET /vehiclestatus/vehiclestatusextended
+// One vehicle, from the feed list or a VehicleStatus reply
 struct Vehicle {
+    std::string id;                   // VehicleId, for VehicleStatus
     std::string journeyId;
     std::string fleetNo;
     std::string operatorCode;
@@ -60,27 +63,57 @@ struct Vehicle {
     std::string status;               // as the API reports it (often "Unknown")
 };
 
-// Shared vehicle feed. Poll only while a detail screen is open, every 15-20 s,
-// one fetch for the whole screen. Never from the board.
+// Follows one journey's vehicle, on the bus detail screen only. The big list
+// (vehiclestatusextended, ~170 KB) is read only to find the vehicle, and again
+// only if the vehicle changes or disappears. While found, one small request
+// (VehicleStatus?VehicleId=) every 20 s. Nothing is polled from the board.
 class VehicleFeed {
 public:
-    // Fetches if the last fetch is 15 s or more old. Returns true if a request was made.
+    static const time_t POLL_EVERY_S = 20;
+    static const time_t LOOKUP_RETRY_S = 120;   // when the vehicle is not in the list yet
+
+    // Start following a journey. Clears any vehicle; the next update() looks it up.
+    void watch(const std::string &journeyId);
+    // Stop following (detail screen closed)
+    void stop();
+
+    // Refreshes as the rules above say. Call every refresh tick while the detail
+    // screen is open. Returns true if a request was made.
     bool update(time_t now);
+
+    // The watched vehicle: 0 or 1 entries
     const std::vector<Vehicle> &vehicles() const { return vehicles_; }
     bool lastFetchOk() const { return ok_; }
     time_t lastFetchAt() const { return lastAt_; }
+    const std::string &vehicleId() const { return vehicleId_; }
 
-    // Replace the list from a reply (used by update(), and by tests)
-    bool setFromJson(const std::string &body, time_t now);
+    // Replies, split out for tests. setFromList takes the big list and finds the
+    // watched journey; setFromStatus takes one VehicleStatus object.
+    bool setFromList(const std::string &body, time_t now);
+    bool setFromStatus(const std::string &body, time_t now);
 
 private:
+    std::string journeyId_;
+    std::string vehicleId_;
     std::vector<Vehicle> vehicles_;
-    time_t lastAt_ = 0;
+    time_t lastAt_ = 0;          // last request of any kind
+    time_t lastLookupAt_ = 0;    // last list request
     bool ok_ = false;
 };
 
+// Index of the trip a departure belongs to, or -1. Matches the journey's start
+// time (journeyStart, local) to the trip's starttime and requires the trip to call
+// at myAtco. Otherwise takes the trip that calls at myAtco at the departure's
+// scheduled time. Pure.
+int matchTripIndex(const std::vector<TripDetail> &details, const Departure &dep,
+                   const std::string &myAtco);
+
+// Nearest point of bus on the trip's polyline. seg is the segment (stop seg to
+// seg+1), t its fraction 0..1. Returns false for trips with fewer than 2 stops.
+bool projectOnTrip(const std::vector<TrackStop> &trip, LatLon bus, int &seg, double &t);
+
 // The trip a departure belongs to, from GetServiceTimetable. True when found, with
-// the trip's stops in order and their scheduled times. Stub until implemented.
+// the trip's stops in order and their scheduled times.
 bool findTripForDeparture(const Departure &dep, const BusStopInfo &myStop,
                           std::vector<TrackStop> &trip);
 
@@ -88,6 +121,9 @@ bool findTripForDeparture(const Departure &dep, const BusStopInfo &myStop,
 // empty, which gives Unavailable). Pure given its inputs.
 BusTrack buildTrack(const Departure &dep, const BusStopInfo &myStop,
                     const std::vector<TrackStop> &trip, const VehicleFeed &feed, time_t now);
+
+// Parse an API timestamp ("...T..:..:..+HH:MM", "...Z", or no offset = local). 0 if unreadable.
+time_t parseApiTime(const std::string &iso);
 
 // Keeps lateHistory and stuck state between refreshes while the detail screen
 // is open. observe() records one BusTrack; current() is the latest with history.
@@ -100,8 +136,8 @@ public:
 private:
     struct Pos { time_t t; double lat; double lon; };
     BusTrack current_;
-    std::vector<Pos> positions_;   // recent bus positions while watched
-    time_t stuckSince_ = 0;
+    std::vector<Pos> positions_;                        // last 6 min of positions while Live
+    std::vector<std::pair<time_t, int>> history_;       // lateness, one point per 15 s, last 40
 };
 
 #endif // TRACKING_H
