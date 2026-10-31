@@ -24,6 +24,9 @@ double distanceM(LatLon a, LatLon b);
 // Distance in metres from p to the city centre (settings.h)
 double distToCentreM(LatLon p);
 
+// Metres rounded to the nearest 10 m (e.g. 634.9 -> 630). Negative input -> -1.
+int roundToTenMetres(double m);
+
 // Coordinates of a stop by ATCO code. Returns false if unknown.
 using CoordLookup = std::function<bool(const std::string &atco, LatLon &out)>;
 

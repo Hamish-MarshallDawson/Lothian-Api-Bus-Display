@@ -227,6 +227,18 @@ static StopDirection timetableDirection(const std::string &atco) {
 
 // ---------------------------------------------------------------------------
 
+// Distance from the home address to a stop, rounded to 10 m; -1 if unknown.
+// Uses the cached geocode and stop list, so it costs no network after the first
+// stop list download. The home position is never printed.
+int stopDistanceFromHomeM(const std::string &atco) {
+    LatLon home;
+    if (CONFIG_ADDRESS().empty() || !geocode(CONFIG_ADDRESS(), home)) return -1;
+    if (!ensureStops()) return -1;
+    auto it = g_stopAt.find(atco);
+    if (it == g_stopAt.end()) return -1;
+    return roundToTenMetres(distanceM(home, it->second));
+}
+
 bool getNearestStops(const std::string &address, int maxStops, std::vector<BusStopInfo> &outStops) {
     outStops.clear();
     LatLon here;
@@ -250,6 +262,7 @@ bool getNearestStops(const std::string &address, int maxStops, std::vector<BusSt
         b.latitude = std::to_string(s.at.lat);
         b.longitude = std::to_string(s.at.lon);
         b.destination = s.name;
+        b.distance_m = roundToTenMetres(near[i].dist);
         outStops.push_back(b);
     }
     return !outStops.empty();
