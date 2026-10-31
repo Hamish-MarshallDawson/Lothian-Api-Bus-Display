@@ -33,7 +33,7 @@ Color readableOn(Color bg) {
     double b = linear(expand5(bg & 31));
     double lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
     // Equal-contrast crossover between black and white text.
-    constexpr Color kDark = 0x0862, kLight = 0xFFFF;  // theme::BG / white
+    constexpr Color kDark = rgb(0x1E, 0x27, 0x2C), kLight = rgb(0xFF, 0xFF, 0xFF);  // theme::TEXT / white
     return lum > 0.179 ? kDark : kLight;
 }
 

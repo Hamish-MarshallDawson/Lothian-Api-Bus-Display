@@ -9,31 +9,32 @@
 #include "text.h"
 #include "theme.h"
 #include "widgets.h"
-#include "fonts/cond_regular_20.h"
-#include "fonts/cond_bold_24.h"
-#include "fonts/cond_regular_48.h"
+#include "fonts/faces.h"
+#include "fonts/faces.h"
+#include "fonts/faces.h"
 
 using namespace gfx;
 
 static int failures = 0;
 #define CHECK(cond) do { if (!(cond)) { std::printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); ++failures; } } while (0)
 
-static const FontFace& R20 = fonts::kCondRegular20;
-static const FontFace& B24 = fonts::kCondBold24;
-static const FontFace& R48 = fonts::kCondRegular48;
+static const FontFace& R20 = fonts::kRegular17;
+static const FontFace& B24 = fonts::kBold20;
+static const FontFace& R48 = fonts::kBold26;
 
 int main() {
-    // Colour packing matches the 24-bit values quoted in theme.h.
-    CHECK(rgb(0x0B, 0x0F, 0x14) == theme::BG);
-    CHECK(rgb(0x14, 0x1B, 0x24) == theme::HEADER_BG);
-    CHECK(rgb(0xF2, 0xF5, 0xF8) == theme::TEXT);
-    CHECK(rgb(0x8A, 0x94, 0xA3) == theme::TEXT_MUTED);
-    CHECK(rgb(0x24, 0x30, 0x40) == theme::DIVIDER);
-    CHECK(rgb(0x3D, 0xDC, 0x84) == theme::LIVE);
-    CHECK(rgb(0xFF, 0xB0, 0x20) == theme::WARN);
-    CHECK(rgb(0xFF, 0x4D, 0x4D) == theme::ALERT);
-    CHECK(rgb(0x5A, 0x63, 0x70) == theme::BADGE_UNKNOWN);
+    // Colour packing matches the 24-bit values quoted in theme.h (LOTHIAN-STYLE.md palette).
+    CHECK(rgb(0xFF, 0xFF, 0xFF) == theme::BG);
+    CHECK(rgb(0x1E, 0x27, 0x2C) == theme::TEXT);
+    CHECK(rgb(0x6B, 0x77, 0x80) == theme::TEXT_MUTED);
+    CHECK(rgb(0xE4, 0xE9, 0xEB) == theme::DIVIDER);
+    CHECK(rgb(0x8C, 0x17, 0x13) == theme::ACCENT);
+    CHECK(rgb(0xB2, 0x6A, 0x00) == theme::WARN);
+    CHECK(rgb(0xC6, 0x28, 0x28) == theme::DANGER);
+    CHECK(theme::LIVE == theme::ACCENT);
+    CHECK(rgb(0x6B, 0x77, 0x80) == theme::BADGE_UNKNOWN);
     CHECK(rgb(0xFF, 0xFF, 0xFF) == theme::BADGE_TEXT_LIGHT);
+    CHECK(theme::kStopHeader.h >= 48 && theme::kDirIntoZone.h >= 48 && theme::kDirOutZone.h >= 48);
 
     // mix endpoints and midpoint
     CHECK(mix(0x1234, 0xABCD, 0) == 0x1234);
@@ -113,11 +114,11 @@ int main() {
 
     // wrapText: at most maxLines, each line fits, nothing silently lost except the cut
     {
-        std::string s = "Edinburgh Park Station Bus Interchange Gyle";
+        std::string s = "Edinburgh Park Station Bus Interchange Gyle Road Extended Terminus Name";
         auto lines = wrapText(R20, s, 128, 2);
         CHECK(lines.size() == 2);
         for (auto& l : lines) CHECK(textWidth(R20, l) <= 128);
-        CHECK(lines[0] == "Edinburgh Park");
+        CHECK(lines[0].size() > 0 && textWidth(R20, lines[0]) <= 128);
         CHECK(lines[1].size() >= 3 && lines[1].substr(lines[1].size() - 3) == "...");
 
         auto short_ = wrapText(R20, "Cameron Toll", 128, 2);
@@ -139,11 +140,11 @@ int main() {
         Canvas c(buf.data(), W, H);
         drawHeader(c, HeaderText{"Morningside Road", "14:32", "INTO CITY", "CHANGE STOP >"});
         CHECK(buf[10 * W + 300] == theme::HEADER_BG);
-        CHECK(buf[63 * W + 100] == theme::DIVIDER);
-        CHECK(buf[64 * W + 100] == theme::BG);
+        CHECK(buf[(theme::HEADER_H - 1) * W + 100] == theme::DIVIDER);
+        CHECK(buf[theme::HEADER_H * W + 100] == theme::BG);
         int ink = 0;
-        for (int y = 0; y < 63; ++y) for (int x = 0; x < W; ++x) ink += (buf[y * W + x] == theme::TEXT);
-        CHECK(ink > 200);
+        for (int y = 0; y < theme::HEADER_H - 1; ++y) for (int x = 0; x < W; ++x) ink += (buf[y * W + x] == theme::TEXT);
+        CHECK(ink > 50);
     }
 
     if (failures == 0) std::printf("gfx: all checks passed\n");

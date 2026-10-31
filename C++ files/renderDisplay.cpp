@@ -21,15 +21,15 @@ extern "C" {
 #include "departures.h"
 #include "renderDisplay.h"
 #include "../gfx/canvas.h"
-#include "../gfx/fonts/cond_bold_12.h"
-#include "../gfx/fonts/cond_bold_24.h"
-#include "../gfx/fonts/cond_bold_28.h"
-#include "../gfx/fonts/cond_regular_12.h"
-#include "../gfx/fonts/cond_regular_14.h"
-#include "../gfx/fonts/cond_regular_16.h"
-#include "../gfx/fonts/cond_regular_20.h"
-#include "../gfx/fonts/cond_regular_24.h"
-#include "../gfx/fonts/cond_regular_48.h"
+#include "../gfx/fonts/faces.h"
+#include "../gfx/fonts/faces.h"
+#include "../gfx/fonts/faces.h"
+#include "../gfx/fonts/faces.h"
+#include "../gfx/fonts/faces.h"
+#include "../gfx/fonts/faces.h"
+#include "../gfx/fonts/faces.h"
+#include "../gfx/fonts/faces.h"
+#include "../gfx/fonts/faces.h"
 #include "../gfx/text.h"
 #include "../gfx/theme.h"
 #include "../gfx/widgets.h"
@@ -103,17 +103,17 @@ const int kRowsTopNotice = HEADER_H + NOTICE_H + 8;        // 96
 void drawCentredBlock(gfx::Canvas &c, int top, int bottom, const std::string &head, Color headInk,
                       const std::string &sub) {
     const int mid = (top + bottom) / 2;
-    gfx::drawTextIn(c, fonts::kCondBold24, Rect{0, 0, SCREEN_W, 0}, mid - 4, gfx::Align::Center, head, headInk);
+    gfx::drawTextIn(c, fonts::kBold20, Rect{0, 0, SCREEN_W, 0}, mid - 4, gfx::Align::Center, head, headInk);
     if (!sub.empty())
-        gfx::drawTextIn(c, fonts::kCondRegular14, Rect{0, 0, SCREEN_W, 0}, mid + 18, gfx::Align::Center, sub, TEXT_MUTED);
+        gfx::drawTextIn(c, fonts::kRegular14, Rect{0, 0, SCREEN_W, 0}, mid + 18, gfx::Align::Center, sub, TEXT_MUTED);
 }
 
 void drawNotice(gfx::Canvas &c, const StopBoard &board) {
     c.fillRect(Rect{0, HEADER_H, SCREEN_W, NOTICE_H}, NOTICE_BG);
     std::string t = board.notices.front();
     if (board.notices.size() > 1) t += "  +" + std::to_string(board.notices.size() - 1);
-    gfx::drawText(c, fonts::kCondRegular14, MARGIN, HEADER_H + 16,
-                  gfx::fitText(fonts::kCondRegular14, t, SCREEN_W - 2 * MARGIN), NOTICE_FG);
+    gfx::drawText(c, fonts::kRegular14, MARGIN, HEADER_H + 16,
+                  gfx::fitText(fonts::kRegular14, t, SCREEN_W - 2 * MARGIN), NOTICE_FG);
 }
 
 // Baseline that puts a face's cap height (px) centred on centreY
@@ -133,11 +133,11 @@ void drawRow(gfx::Canvas &c, int r, const Departure &d, bool stale) {
     std::string label = d.service.substr(0, 3);
     Color labelInk = gfx::readableOn(fill);
     if (stale) labelInk = fadeToBg(labelInk, 128);
-    gfx::drawTextIn(c, fonts::kCondBold24, Rect{MARGIN, r + 14, BADGE_W, BADGE_H}, capBaseline(cy, 17),
+    gfx::drawTextIn(c, fonts::kBold20, Rect{MARGIN, r + 14, BADGE_W, BADGE_H}, capBaseline(cy, 17),
                     gfx::Align::Center, label, labelInk);
 
     // Destination, up to two lines of 128 px, centred on the badge's centre line
-    const FontFace &dest = fonts::kCondRegular20;
+    const FontFace &dest = fonts::kRegular17;
     std::vector<std::string> lines = gfx::wrapText(dest, d.destination, 128, 2);
     int baselines[2] = {capBaseline(cy, 15), 0};  // one line
     if (lines.size() == 2) {                              // two lines as a block, 24 px apart
@@ -154,24 +154,24 @@ void drawRow(gfx::Canvas &c, int r, const Departure &d, bool stale) {
     // DUE and CANC are centred on the same line, so the column reads level.
     const Rect right{0, 0, SCREEN_W - MARGIN, 0};
     if (cancelled) {
-        gfx::drawTextIn(c, fonts::kCondBold24, right, capBaseline(cy, 17), gfx::Align::Right, "CANC",
+        gfx::drawTextIn(c, fonts::kBold20, right, capBaseline(cy, 17), gfx::Align::Right, "CANC",
                         stale ? fadeToBg(ALERT, 128) : ALERT);
     } else if (d.minutes <= 0) {
         Color due = d.live ? LIVE : TEXT_MUTED;
         if (stale) due = fadeToBg(due, 128);
-        gfx::drawTextIn(c, fonts::kCondBold28, right, capBaseline(cy, 20), gfx::Align::Right, "DUE", due);
+        gfx::drawTextIn(c, fonts::kBold26, right, capBaseline(cy, 20), gfx::Align::Right, "DUE", due);
     } else {
         Color num = d.delayed ? WARN : (d.live ? TEXT : TEXT_MUTED);
         if (stale) num = fadeToBg(num, 128);
         const int numBase = capBaseline(cy, 35);  // 48 px digits, cap height 35
-        gfx::drawTextIn(c, fonts::kCondRegular16, right, numBase, gfx::Align::Right, "min", num);
+        gfx::drawTextIn(c, fonts::kRegular15, right, numBase, gfx::Align::Right, "min", num);
         std::string n = std::to_string(std::min(d.minutes, 99));
-        gfx::drawTextIn(c, fonts::kCondRegular48, Rect{0, 0, 280, 0}, numBase, gfx::Align::Right, n, num);
+        gfx::drawTextIn(c, fonts::kBold26, Rect{0, 0, 280, 0}, numBase, gfx::Align::Right, n, num);
         if (d.delayed) {
             Color tag = stale ? fadeToBg(WARN, 128) : WARN;
-            gfx::drawTextIn(c, fonts::kCondBold12, right, r + 66, gfx::Align::Right, "LATE", tag);
+            gfx::drawTextIn(c, fonts::kSemiBold13, right, r + 66, gfx::Align::Right, "LATE", tag);
         } else if (!d.live) {
-            gfx::drawTextIn(c, fonts::kCondBold12, right, r + 66, gfx::Align::Right, "SCHED", TEXT_MUTED);
+            gfx::drawTextIn(c, fonts::kSemiBold13, right, r + 66, gfx::Align::Right, "SCHED", TEXT_MUTED);
         }
     }
 
@@ -217,11 +217,11 @@ void drawFooter(gfx::Canvas &c, const StopBoard &board, time_t now) {
         text = hasData ? std::string("Timetable times, ") + hhmm : "Timetable times";
     }
 
-    const int hintW = gfx::textWidth(fonts::kCondRegular12, "Tap stop to change");
+    const int hintW = gfx::textWidth(fonts::kRegular12, "Tap stop to change");
     c.fillRoundRect(Rect{MARGIN, 447, 6, 6}, 3, dot);
-    gfx::drawText(c, fonts::kCondRegular14, MARGIN + 12, 456,
-                  gfx::fitText(fonts::kCondRegular14, text, SCREEN_W - 2 * MARGIN - 12 - hintW - 12), TEXT_MUTED);
-    gfx::drawTextIn(c, fonts::kCondRegular12, Rect{0, 0, SCREEN_W - MARGIN, 0}, 456, gfx::Align::Right,
+    gfx::drawText(c, fonts::kRegular14, MARGIN + 12, 456,
+                  gfx::fitText(fonts::kRegular14, text, SCREEN_W - 2 * MARGIN - 12 - hintW - 12), TEXT_MUTED);
+    gfx::drawTextIn(c, fonts::kRegular12, Rect{0, 0, SCREEN_W - MARGIN, 0}, 456, gfx::Align::Right,
                     "Tap stop to change", TEXT_MUTED);
 }
 
