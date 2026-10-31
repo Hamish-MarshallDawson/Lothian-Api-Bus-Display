@@ -41,6 +41,9 @@ inline bool apiHttpGet(const std::string &url, std::string &bodyOut, long &httpC
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &bodyOut);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, USER_AGENT().c_str());
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
+    // Empty string: send Accept-Encoding for every encoding curl supports and decode
+    // the gzip reply. Without this the body arrives compressed and JSON parsing fails.
+    curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
 

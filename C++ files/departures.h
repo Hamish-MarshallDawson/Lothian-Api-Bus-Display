@@ -55,6 +55,12 @@ StopBoard fetchStopBoard(const std::string &atcocode, time_t now);
 // the same error status on every board.
 std::vector<StopBoard> fetchStopBoards(const std::vector<std::string> &atcocodes, time_t now);
 
+// The parsing half of fetchStopBoards, for tests: a MultipleStopEvents reply
+// ({"stops": [...]}, or a bare array) to one board per requested code.
+std::vector<StopBoard> boardsFromMultipleStopEvents(const nlohmann::json &doc,
+                                                    const std::vector<std::string> &atcocodes,
+                                                    time_t now);
+
 // Name of a status for logs, e.g. "key rejected".
 const char *boardStatusName(BoardStatus s);
 
