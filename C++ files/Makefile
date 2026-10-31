@@ -31,8 +31,9 @@ C_SOURCES = $(DIR_GUI)/GUI_Paint.c \
             $(DIR_FONTS)/font50.c \
             $(HW_SOURCES)
 
-CPP_SOURCES = busTrack.cpp departures.cpp openmappull.cpp png_write.cpp renderDisplay.cpp
-HELPER_SOURCES = openmappull.cpp openmappull_main.cpp
+# Library code shared by busTrack and the tests
+LIB_SOURCES = departures.cpp openmappull.cpp refresh.cpp png_write.cpp renderDisplay.cpp
+CPP_SOURCES = busTrack.cpp $(LIB_SOURCES)
 
 # Compiler settings
 CC = gcc
@@ -42,16 +43,21 @@ CXXFLAGS = -Wall -O2 -MMD -MP -std=c++11 -I$(DIR_CONFIG) -I$(DIR_LCD) -I$(DIR_GU
 
 # Output
 TARGET = busTrack
+TEST = tests/refresh_test
 
-all: $(TARGET) openmappull
+all: $(TARGET)
 
 # busTrack: display (if wiringPi), snapshot PNG, and one-stop fetch
 $(TARGET): $(C_SOURCES:.c=.o) $(CPP_SOURCES:.cpp=.o)
 	$(CXX) $^ -o $@ $(HW_LIBS) -lcurl -lz -lm
 
-# openmappull: CLI helper, prints the nearest stops for BUS_ADDRESS
-openmappull: $(HELPER_SOURCES:.cpp=.o)
+# Logic checks that need no display or network: refresh policy and the parser.
+# Run on the Pi from this folder: make test
+$(TEST): tests/refresh_test.o refresh.o departures.o
 	$(CXX) $^ -o $@ -lcurl -lm
+
+test: $(TEST)
+	./$(TEST)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -60,9 +66,9 @@ openmappull: $(HELPER_SOURCES:.cpp=.o)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(TARGET) openmappull *.o *.d $(DIR_LCD)/*.o $(DIR_GUI)/*.o $(DIR_CONFIG)/*.o $(DIR_FONTS)/*.o \
+	rm -f $(TARGET) $(TEST) *.o *.d tests/*.o tests/*.d $(DIR_LCD)/*.o $(DIR_GUI)/*.o $(DIR_CONFIG)/*.o $(DIR_FONTS)/*.o \
 	      $(DIR_LCD)/*.d $(DIR_GUI)/*.d $(DIR_CONFIG)/*.d $(DIR_FONTS)/*.d
 
-.PHONY: all clean
+.PHONY: all test clean
 
--include $(wildcard *.d) $(wildcard $(DIR_GUI)/*.d $(DIR_FONTS)/*.d)
+-include $(wildcard *.d tests/*.d) $(wildcard $(DIR_GUI)/*.d $(DIR_FONTS)/*.d)
