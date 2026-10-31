@@ -39,6 +39,7 @@ struct StopBoard {
     std::vector<Departure> departures;  // sorted by minutes, earliest first
     std::vector<std::string> notices;   // stop-level notice texts
     time_t fetchedAt = 0;               // 0 = never fetched
+    int distanceFromHomeM = -1;         // metres from the home address; -1 = unknown
     BoardStatus status = BoardStatus::Loading;
     std::string statusDetail;           // short human text for logs / error screens
 };

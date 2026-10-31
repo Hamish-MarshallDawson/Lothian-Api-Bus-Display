@@ -2,11 +2,11 @@
 
 #include <algorithm>
 
-#include "../gfx/fonts/cond_bold_24.h"
-#include "../gfx/fonts/cond_bold_28.h"
-#include "../gfx/fonts/cond_regular_16.h"
-#include "../gfx/fonts/cond_regular_20.h"
-#include "../gfx/fonts/cond_regular_24.h"
+#include "../gfx/fonts/faces.h"
+#include "../gfx/fonts/faces.h"
+#include "../gfx/fonts/faces.h"
+#include "../gfx/fonts/faces.h"
+#include "../gfx/fonts/faces.h"
 #include "../gfx/text.h"
 #include "../gfx/theme.h"
 
@@ -30,15 +30,15 @@ void header(Canvas &c, const std::string &title, bool back) {
     c.hline(0, kScreenW - 1, kHeaderH - 1, theme::DIVIDER);
     int titleX = 16;
     if (back) {
-        gfx::drawTextIn(c, F::kCondRegular20, GRect{16, 0, 64, kHeaderH},
-                        centreBaseline(0, kHeaderH, F::kCondRegular20),
+        gfx::drawTextIn(c, F::kRegular17, GRect{16, 0, 64, kHeaderH},
+                        centreBaseline(0, kHeaderH, F::kRegular17),
                         gfx::Align::Left, "< Back", theme::TEXT);
         titleX = kBackBtn.w + 8;
     }
     const int maxW = kScreenW - titleX - 16;
-    gfx::drawTextIn(c, F::kCondBold24, GRect{titleX, 0, maxW, kHeaderH},
-                    centreBaseline(0, kHeaderH, F::kCondBold24), gfx::Align::Left,
-                    gfx::fitText(F::kCondBold24, title, maxW), theme::TEXT);
+    gfx::drawTextIn(c, F::kBold20, GRect{titleX, 0, maxW, kHeaderH},
+                    centreBaseline(0, kHeaderH, F::kBold20), gfx::Align::Left,
+                    gfx::fitText(F::kBold20, title, maxW), theme::TEXT);
 }
 
 // Rounded button with a centred label. The rect is the same one hitTest uses.
@@ -58,20 +58,20 @@ void messageScreen(Canvas &c, const std::string &title, gfx::Color titleColour,
                    const std::string &message, const std::string &note,
                    const std::string &footer) {
     background(c);
-    gfx::drawTextIn(c, F::kCondBold28, GRect{16, 64, 288, 40}, 100, gfx::Align::Left,
+    gfx::drawTextIn(c, F::kBold26, GRect{16, 64, 288, 40}, 100, gfx::Align::Left,
                     title, titleColour);
     int y = 136;
-    for (const auto &line : gfx::wrapText(F::kCondRegular20, message, 288, 4)) {
-        gfx::drawText(c, F::kCondRegular20, 16, y, line, theme::TEXT);
+    for (const auto &line : gfx::wrapText(F::kRegular17, message, 288, 4)) {
+        gfx::drawText(c, F::kRegular17, 16, y, line, theme::TEXT);
         y += 26;
     }
     if (!note.empty()) {
-        gfx::drawTextIn(c, F::kCondRegular16, GRect{16, 216, 288, 24}, 236, gfx::Align::Left,
+        gfx::drawTextIn(c, F::kRegular15, GRect{16, 216, 288, 24}, 236, gfx::Align::Left,
                         note, theme::WARN);
     }
-    button(c, kRetryBtn, "RETRY", F::kCondBold24, theme::TEXT, theme::HEADER_BG);
-    button(c, kChooseBtn, "CHOOSE STOP", F::kCondBold24, theme::TEXT, theme::HEADER_BG);
-    gfx::drawTextIn(c, F::kCondRegular16, GRect{16, 280, 288, 24}, 296, gfx::Align::Left,
+    button(c, kRetryBtn, "RETRY", F::kBold20, theme::TEXT, theme::HEADER_BG);
+    button(c, kChooseBtn, "CHOOSE STOP", F::kBold20, theme::TEXT, theme::HEADER_BG);
+    gfx::drawTextIn(c, F::kRegular15, GRect{16, 280, 288, 24}, 296, gfx::Align::Left,
                     footer, theme::TEXT_MUTED);
 }
 
@@ -79,21 +79,21 @@ void messageScreen(Canvas &c, const std::string &title, gfx::Color titleColour,
 
 void drawBootScreen(Canvas &c, const std::string &status) {
     background(c);
-    centredLine(c, 200, F::kCondBold28, "Bus Tracker", theme::TEXT);
-    centredLine(c, 236, F::kCondRegular20, status, theme::TEXT_MUTED);
+    centredLine(c, 200, F::kBold26, "Bus Tracker", theme::TEXT);
+    centredLine(c, 236, F::kRegular17, status, theme::TEXT_MUTED);
 }
 
 void drawLoadingScreen(Canvas &c, const std::string &what) {
     background(c);
-    centredLine(c, 230, F::kCondRegular24, what, theme::TEXT);
+    centredLine(c, 230, F::kBold22, what, theme::TEXT);
 }
 
 void drawDirectionScreen(Canvas &c) {
     background(c);
     header(c, "Which way?", true);
-    button(c, kDirInto, "INTO CITY", F::kCondBold28, theme::TEXT, theme::HEADER_BG);
-    button(c, kDirOut, "OUT OF CITY", F::kCondBold28, theme::TEXT, theme::HEADER_BG);
-    gfx::drawText(c, F::kCondRegular16, 16, 340, "Stops split by direction of travel",
+    button(c, kDirInto, "INTO CITY", F::kBold26, theme::TEXT, theme::HEADER_BG);
+    button(c, kDirOut, "OUT OF CITY", F::kBold26, theme::TEXT, theme::HEADER_BG);
+    gfx::drawText(c, F::kRegular15, 16, 340, "Stops split by direction of travel",
                   theme::TEXT_MUTED);
 }
 
@@ -101,18 +101,18 @@ void drawStopListScreen(Canvas &c, const std::string &title, const std::vector<s
     background(c);
     header(c, title, true);
     if (names.empty()) {
-        centredLine(c, 200, F::kCondRegular20, "No stops found", theme::ALERT);
+        centredLine(c, 200, F::kRegular17, "No stops found", theme::ALERT);
         return;
     }
     const int rows = std::min(static_cast<int>(names.size()), kMaxStopRows);
     for (int i = 0; i < rows; ++i) {
         const Rect r = stopRow(i);
         c.hline(0, kScreenW - 1, r.y + r.h - 1, theme::DIVIDER);
-        gfx::drawTextIn(c, F::kCondRegular20, GRect{16, r.y, 288, r.h},
-                        centreBaseline(r.y, r.h, F::kCondRegular20), gfx::Align::Left,
-                        gfx::fitText(F::kCondRegular20, names[i], 288), theme::TEXT);
+        gfx::drawTextIn(c, F::kRegular17, GRect{16, r.y, 288, r.h},
+                        centreBaseline(r.y, r.h, F::kRegular17), gfx::Align::Left,
+                        gfx::fitText(F::kRegular17, names[i], 288), theme::TEXT);
     }
-    gfx::drawTextIn(c, F::kCondRegular16, GRect{16, 456, 288, 24}, 474, gfx::Align::Left,
+    gfx::drawTextIn(c, F::kRegular15, GRect{16, 456, 288, 24}, 474, gfx::Align::Left,
                     "Tap a stop to show its board", theme::TEXT_MUTED);
 }
 
@@ -149,7 +149,7 @@ void drawErrorScreen(Canvas &c, ErrorReason r, int retryInSecs, long staleSecs) 
 
 void drawEmptyScreen(Canvas &c, const std::string &stopName) {
     messageScreen(c, "NO BUSES", theme::WARN, "No buses in the next hour.", "",
-                  gfx::fitText(F::kCondRegular16, stopName, 288));
+                  gfx::fitText(F::kRegular15, stopName, 288));
 }
 
 void drawAsleepScreen(Canvas &c) {

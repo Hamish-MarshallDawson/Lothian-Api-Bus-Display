@@ -162,7 +162,7 @@ static void drawFrame(gfx::Canvas &frame, Screen screen, StopDirection dir, Erro
                       const StopBoard &board, const std::vector<std::string> &names,
                       time_t now, long staleSecs, int retrySecs) {
     switch (screen) {
-    case Screen::Board:     drawMainScreen(frame, board, now); break;
+    case Screen::Board:     drawMainScreen(frame, board, now, dir); break;
     case Screen::Boot:      drawBootScreen(frame, "Finding stops..."); break;
     case Screen::Loading:   drawLoadingScreen(frame, "Finding stops..."); break;
     case Screen::Direction: drawDirectionScreen(frame); break;
@@ -335,6 +335,7 @@ static int runDisplay() {
     auto takeBoard = [&]() {
         board = refresher.board(0);
         board.stopName = boardStop.stopName;
+        board.distanceFromHomeM = boardStop.distance_m;
     };
 
     auto flush = [&]() {
