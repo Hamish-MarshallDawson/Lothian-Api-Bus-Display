@@ -31,4 +31,7 @@ bool getNearestStopsGrouped(const std::string &address, int perGroup, GroupedSto
 // returns it. False when nothing is found (the caller falls back and says so).
 bool pairedStop(const BusStopInfo &current, Direction want, BusStopInfo &out);
 
+// Name and position of a stop by ATCO code, from the cached stop list. False if unknown.
+bool stopByCode(const std::string &atco, std::string &name, LatLon &at);
+
 #endif // OPENMAPPULL_H

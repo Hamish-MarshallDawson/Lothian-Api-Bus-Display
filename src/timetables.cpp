@@ -131,7 +131,7 @@ bool tripsFor(const ServiceRef &svc, const std::string &date, std::vector<std::v
 
     std::string url = API_BASE() + "/timetables/GetServiceTimetable?publicservicename="
                     + urlEncode(svc.publicservicename) + "&operator=" + urlEncode(svc.opCode)
-                    + "&date=" + date;   // timeFormat is rejected here (400); times are not used anyway
+                    + "&date=" + date;   // from/to and timeFormat are rejected (400): whole day only
     std::string body;
     long code = 0;
     if (!apiHttpGet(url, body, code)) return false;
@@ -143,5 +143,70 @@ bool tripsFor(const ServiceRef &svc, const std::string &date, std::vector<std::v
     }
     store[key] = json(out);
     saveDayStore("trips", date);
+    return true;
+}
+
+std::vector<TripDetail> parseTripDetails(const json &doc) {
+    std::vector<TripDetail> out;
+    auto dirs = doc.find("directions");
+    if (dirs == doc.end() || !dirs->is_array()) return out;
+    for (const auto &dir : *dirs) {
+        auto trips = dir.find("trips");
+        if (trips == dir.end() || !trips->is_array()) continue;
+        for (const auto &trip : *trips) {
+            TripDetail t;
+            t.starttime = jstr(trip, "starttime");
+            auto events = trip.find("events");
+            if (events == trip.end() || !events->is_array()) continue;
+            for (const auto &ev : *events) {
+                TripEvent e{jstr(ev, "atcocode"), jstr(ev, "departure")};
+                if (!e.atco.empty()) t.events.push_back(e);
+            }
+            if (!t.events.empty()) out.push_back(t);
+        }
+    }
+    return out;
+}
+
+bool tripDetailsFor(const ServiceRef &svc, const std::string &date, std::vector<TripDetail> &out) {
+    json &store = dayStore("details", date);
+    const std::string key = svc.publicservicename + "|" + svc.opCode;
+    auto hit = store.find(key);
+    if (hit != store.end() && hit->is_array()) {
+        out.clear();
+        for (const auto &t : *hit) {
+            TripDetail d;
+            d.starttime = jstr(t, "starttime");
+            // cache rows are [atco, departure]
+            for (const auto &e : t.at("events")) {
+                if (e.is_array() && e.size() == 2) {
+                    d.events.push_back(TripEvent{e[0].get<std::string>(), e[1].get<std::string>()});
+                }
+            }
+            out.push_back(d);
+        }
+        return true;
+    }
+
+    std::string url = API_BASE() + "/timetables/GetServiceTimetable?publicservicename="
+                    + urlEncode(svc.publicservicename) + "&operator=" + urlEncode(svc.opCode)
+                    + "&date=" + date;
+    std::string body;
+    long code = 0;
+    if (!apiHttpGet(url, body, code)) return false;
+    try {
+        out = parseTripDetails(json::parse(body));
+    } catch (const json::exception &e) {
+        std::cerr << "GetServiceTimetable parse error: " << e.what() << std::endl;
+        return false;
+    }
+    json arr = json::array();
+    for (const auto &t : out) {
+        json evs = json::array();
+        for (const auto &e : t.events) evs.push_back(json::array({e.atco, e.departure}));
+        arr.push_back({{"starttime", t.starttime}, {"events", evs}});
+    }
+    store[key] = arr;
+    saveDayStore("details", date);
     return true;
 }

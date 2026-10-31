@@ -5,7 +5,13 @@
 `~/.config/bustracker/env` must contain at least:
 
     BUSTRACKER_KEY=<subscription key>
-    BUS_ADDRESS=<home address>
+    BUS_HOME_LAT=<home latitude>
+    BUS_HOME_LON=<home longitude>
+
+The home position is preferred. With it set, the home address is never sent to any
+geocoder. `BUS_ADDRESS` is only a fallback for when the position is not known: it is
+geocoded once, cached, and never retried within an hour of a failure. The address is
+personal data, so do not put it anywhere else.
 
 Keep it private: `chmod 600 ~/.config/bustracker/env`. The service reads it
 through `EnvironmentFile=`, and the key is never printed by the program.
