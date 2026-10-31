@@ -3,6 +3,7 @@
 // Generated faces come from tools/bake_font.cpp (see third_party/fonts/NOTICE).
 #pragma once
 #include "nunito_bold_14.h"
+#include "nunito_bold_16.h"
 #include "nunito_bold_20.h"
 #include "nunito_bold_22.h"
 #include "nunito_bold_26.h"
@@ -11,6 +12,7 @@
 #include "nunito_regular_14.h"
 #include "nunito_regular_15.h"
 #include "nunito_regular_17.h"
+#include "nunito_regular_19.h"
 #include "nunito_semibold_13.h"
 #include "nunito_semibold_14.h"
 #include "nunito_semibold_15.h"
