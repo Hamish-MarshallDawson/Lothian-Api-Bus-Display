@@ -1,5 +1,6 @@
-// Shared look: colours, spacing and staleness thresholds for the whole app.
-// Values follow .agents/DESIGN.md; each colour is RGB565 (24-bit source in the comment).
+// Shared look: the Lothian app's light palette, layout and staleness thresholds.
+// Values follow .agents/LOTHIAN-STYLE.md. Colours are RGB565; the 24-bit source is in each comment.
+// Route colours are not here: they come from busColours.h, exactly as published.
 #pragma once
 #include "canvas.h"
 
@@ -7,39 +8,67 @@ namespace theme {
 
 using gfx::Color;
 using gfx::rgb;
+using gfx::Rect;
 
-constexpr Color BG            = 0x0862;  // #0B0F14 screen background
-constexpr Color HEADER_BG     = 0x10C4;  // #141B24 header band
-constexpr Color TEXT          = 0xF7BF;  // #F2F5F8 primary text
-constexpr Color TEXT_MUTED    = 0x8CB4;  // #8A94A3 secondary text, scheduled numbers
-constexpr Color DIVIDER       = 0x2188;  // #243040 hairlines
-constexpr Color LIVE          = 0x3EF0;  // #3DDC84 DUE, live status
-constexpr Color WARN          = 0xFD84;  // #FFB020 LATE, stale status, notice strip
-constexpr Color ALERT         = 0xFA69;  // #FF4D4D CANC, no data
-constexpr Color NOTICE_BG     = WARN;
-constexpr Color NOTICE_FG     = BG;
-constexpr Color BADGE_UNKNOWN = 0x5B0E;  // #5A6370 route not in busLineColours
-constexpr Color BADGE_TEXT_DARK  = 0x0862;  // #0B0F14
-constexpr Color BADGE_TEXT_LIGHT = 0xFFFF;  // #FFFFFF
+// Palette
+constexpr Color BG            = rgb(0xFF, 0xFF, 0xFF);  // screen
+constexpr Color TEXT          = rgb(0x1E, 0x27, 0x2C);  // stop name, destinations, minutes
+constexpr Color TEXT_MUTED    = rgb(0x6B, 0x77, 0x80);  // labels, scheduled times, footer
+constexpr Color DIVIDER       = rgb(0xE4, 0xE9, 0xEB);  // row dividers, status-bar rule
+constexpr Color ACCENT        = rgb(0x8C, 0x17, 0x13);  // Lothian maroon: stop icon, buttons, live icon, Due
+constexpr Color ACCENT_SOFT   = rgb(0xF6, 0xE8, 0xE7);  // pressed or selected row tint
+constexpr Color ALERT_BG      = rgb(0xE4, 0xEA, 0xFF);  // alert banner
+constexpr Color ALERT_FG      = rgb(0x2F, 0x54, 0xEB);  // alert icon and chevron
+constexpr Color WARN          = rgb(0xB2, 0x6A, 0x00);  // delayed
+constexpr Color DANGER        = rgb(0xC6, 0x28, 0x28);  // cancelled, error titles, offline
 
-// Tokens for the other screens (lbd-ui-flows). Buttons and selection read against BG.
-constexpr Color BUTTON_FILL     = rgb(0x1E, 0x2A, 0x38);  // raised button
-constexpr Color BUTTON_TEXT     = TEXT;
-constexpr Color ROW_SELECTED    = rgb(0x17, 0x3B, 0x5C);  // selected list row, Lothian blue family
+// Names the flows and board code already use
+constexpr Color HEADER_BG     = BG;
+constexpr Color LIVE          = ACCENT;
+constexpr Color ALERT         = DANGER;
+constexpr Color ERROR         = DANGER;
+constexpr Color NOTICE_BG     = ALERT_BG;
+constexpr Color NOTICE_FG     = TEXT;
+constexpr Color BADGE_UNKNOWN = rgb(0x6B, 0x77, 0x80);  // route not in busColours.h
+constexpr Color BADGE_TEXT_DARK  = TEXT;
+constexpr Color BADGE_TEXT_LIGHT = rgb(0xFF, 0xFF, 0xFF);
+constexpr Color BUTTON_FILL      = ACCENT;               // selected or primary button
+constexpr Color BUTTON_TEXT      = rgb(0xFF, 0xFF, 0xFF);
+constexpr Color BUTTON_OUTLINE   = ACCENT;               // unselected button border and text
+constexpr Color ROW_SELECTED     = ACCENT_SOFT;
 constexpr Color ROW_SELECTED_TEXT = TEXT;
-constexpr Color ERROR           = ALERT;                  // error text and status
 
 // Spacing, px
 constexpr int SCREEN_W = 320;
 constexpr int SCREEN_H = 480;
 constexpr int MARGIN   = 12;
-constexpr int HEADER_H = 64;
-constexpr int NOTICE_H = 24;
-constexpr int ROW_H    = 72;
+constexpr int STATUS_H = 24;
+constexpr int HEADER_H = 72;  // status bar plus stop header: the top chrome of the board
+constexpr int NOTICE_H = 28;  // alert banner height
+constexpr int ROW_H    = 56;
+
+// Route pills (in rows) and chips (under the header)
+constexpr int PILL_W = 40, PILL_H = 18, PILL_R = 3;
+constexpr int CHIP_MIN_W = 32, CHIP_H = 20;
+
+// Legacy board metrics, used by the old board until it is rewritten
 constexpr int FOOTER_Y = 432;
 constexpr int BADGE_W  = 60;
 constexpr int BADGE_H  = 44;
 constexpr int BADGE_R  = 8;
+
+// Named layout rects (LOTHIAN-STYLE.md). Tap zones are at least 48 px tall.
+constexpr Rect kStatusBar    {0, 0, SCREEN_W, STATUS_H};        // clock, live state
+constexpr Rect kStopHeader   {0, 24, SCREEN_W, 48};             // tap zone: opens the stop list
+constexpr Rect kDirIntoZone  {0, 72, 160, 48};                  // tap zone: into city
+constexpr Rect kDirOutZone   {160, 72, 160, 48};                // tap zone: out of city
+constexpr Rect kDirInto      {12, 76, 144, 40};                 // drawn button: into city
+constexpr Rect kDirOut       {165, 76, 144, 40};                // drawn button: out of city
+constexpr int  kChipsTop     = 126;                             // route chips, 20 px tall
+constexpr int  kSectionTop   = 148;                             // "Upcoming departures" band, 148-171
+constexpr int  kAlertTop     = 172;                             // alert banner, 28 px when shown
+constexpr int  kRowsTop      = 172;                             // first row without an alert banner
+constexpr int  kRowsTopAlert = 200;                             // first row with an alert banner
 
 // Data age thresholds, seconds
 constexpr int STALE_WARN_S = 90;
