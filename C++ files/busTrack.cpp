@@ -148,9 +148,30 @@ static bool loadFixtureBoard(const std::string &path, time_t now, StopBoard &out
 // person sees them; flushToLcd does the panel's flip.
 
 // Sample stops for the picker in snapshot mode (no network needed).
-static const std::vector<std::string> kSampleStopNames = {
-    "Princes Street", "Lothian Road", "Haymarket Station", "George Street",
-    "North Bridge", "Morrison Street", "Tollcross"};
+static std::vector<BusStopInfo> sampleStops() {
+    const char *names[] = {"Princes Street", "Lothian Road", "Haymarket Station", "George Street",
+                           "North Bridge", "Morrison Street", "Tollcross"};
+    const int metres[] = {630, 880, 1240, 1510, 2100, 2350, 2790};
+    std::vector<BusStopInfo> out;
+    for (int i = 0; i < 7; ++i) {
+        BusStopInfo s;
+        s.stopName = names[i];
+        s.stopID = "sample" + std::to_string(i);
+        s.distance_m = metres[i];
+        out.push_back(s);
+    }
+    return out;
+}
+
+// Second line of a stop row: "630m - into city", or just the direction if the distance is unknown.
+static std::string stopDetail(const BusStopInfo &s, StopDirection dir) {
+    std::string d = dir == StopDirection::Into ? "into city" : "out of city";
+    if (s.distance_m < 0) return d;
+    std::string dist = s.distance_m < 1000
+        ? std::to_string(s.distance_m) + "m"
+        : std::to_string(s.distance_m / 1000) + "." + std::to_string(s.distance_m % 1000 / 100) + "km";
+    return dist + " - " + d;   // the baked fonts are ASCII only
+}
 
 // Seconds since the board's data was fetched, or -1 if there is none. The error
 // screen shows it when it is recent.
@@ -159,17 +180,24 @@ static long staleAgeSecs(const StopBoard &board, time_t now) {
 }
 
 static void drawFrame(gfx::Canvas &frame, Screen screen, StopDirection dir, ErrorReason reason,
-                      const StopBoard &board, const std::vector<std::string> &names,
+                      const StopBoard &board, const std::vector<BusStopInfo> &list,
                       time_t now, long staleSecs, int retrySecs) {
     switch (screen) {
     case Screen::Board:     drawMainScreen(frame, board, now); break;
     case Screen::Boot:      drawBootScreen(frame, "Finding stops..."); break;
-    case Screen::Loading:   drawLoadingScreen(frame, "Finding stops..."); break;
-    case Screen::StopList:
-        drawStopListScreen(frame, dir == StopDirection::Into ? "Into city" : "Out of city", names);
+    case Screen::Loading:   drawLoadingScreen(frame, "Finding stops...", now); break;
+    case Screen::StopList: {
+        std::vector<std::string> names, details;
+        for (const auto &s : list) {
+            names.push_back(s.stopName);
+            details.push_back(stopDetail(s, dir));
+        }
+        drawStopListScreen(frame, dir == StopDirection::Into ? "Into city" : "Out of city",
+                           names, details, now);
         break;
-    case Screen::Error:     drawErrorScreen(frame, reason, retrySecs, staleSecs); break;
-    case Screen::Empty:     drawEmptyScreen(frame, board.stopName); break;
+    }
+    case Screen::Error:     drawErrorScreen(frame, reason, retrySecs, staleSecs, now); break;
+    case Screen::Empty:     drawEmptyScreen(frame, board.stopName, now); break;
     case Screen::Asleep:    drawAsleepScreen(frame); break;
     }
 }
@@ -230,7 +258,7 @@ static int runSnapshot(const Options &o) {
     if (!buffer) { std::cerr << "Out of memory\n"; return 1; }
     gfx::Canvas frame(buffer, w, h);
 
-    drawFrame(frame, screen, StopDirection::Into, reason, board, kSampleStopNames,
+    drawFrame(frame, screen, StopDirection::Into, reason, board, sampleStops(),
               frameNow, staleSecs, 42);
 
     bool ok = writePngRGB565(o.snapshotPath, frame.data(), w, h);
@@ -336,10 +364,8 @@ static int runDisplay() {
     };
 
     auto flush = [&]() {
-        std::vector<std::string> names;
-        for (const auto &s : pick) names.push_back(s.stopName);
         const time_t now = time(nullptr);
-        drawFrame(frame, ui.screen, ui.dir, ui.reason, board, names, now,
+        drawFrame(frame, ui.screen, ui.dir, ui.reason, board, pick, now,
                   staleAgeSecs(board, now), secondsToNextMinute());
         flushToLcd(frame);
     };

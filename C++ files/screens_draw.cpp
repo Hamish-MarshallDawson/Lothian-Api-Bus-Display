@@ -138,6 +138,8 @@ void drawLoadingScreen(Canvas &c, const std::string &what, time_t now) {
     background(c);
     statusBar(c, now, "", style::TEXT);
     centredLine(c, 230, F::kCondRegular20, what, style::TEXT_MUTED);
+    // the backend's first lookup of the day can take around 12 s
+    centredLine(c, 256, F::kCondRegular14, "This can take a few seconds", style::TEXT_MUTED);
 }
 
 void drawStopListScreen(Canvas &c, const std::string &title, const std::vector<std::string> &names,

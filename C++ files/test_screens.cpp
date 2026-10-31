@@ -42,18 +42,19 @@ static void testLayout() {
 static void testHitTest() {
     int arg = -1;
     // Board: header opens the stop list; the two direction buttons sit under it
-    CHECK(hitTest(Screen::Board, 0, 160, 10, arg) == Action::OpenStopList);
+    CHECK(hitTest(Screen::Board, 0, 160, 40, arg) == Action::OpenStopList);
+    CHECK(hitTest(Screen::Board, 0, 160, 10, arg) == Action::None);      // status bar
     CHECK(hitTest(Screen::Board, 0, 60, 96, arg) == Action::PickInto);
     CHECK(hitTest(Screen::Board, 0, 250, 96, arg) == Action::PickOut);
     CHECK(hitTest(Screen::Board, 0, 160, 200, arg) == Action::None);   // a stop row, not a button
     CHECK(hitTest(Screen::Board, 0, 160, 150, arg) == Action::None);
 
-    // Stop rows start under the 64 px header: row 2 is y 176..231; rows past stopCount do nothing
-    CHECK(hitTest(Screen::StopList, 3, 100, 180, arg) == Action::PickStop && arg == 2);
+    // Stop rows start under the header (y 72): row 2 is y 184..239; rows past stopCount do nothing
+    CHECK(hitTest(Screen::StopList, 3, 100, 200, arg) == Action::PickStop && arg == 2);
     CHECK(hitTest(Screen::StopList, 3, 100, 340, arg) == Action::None);
-    CHECK(hitTest(Screen::StopList, 9, 100, 64 + 56 * 6 + 5, arg) == Action::PickStop && arg == 6);
-    CHECK(hitTest(Screen::StopList, 9, 100, 64 + 56 * 7 + 5, arg) == Action::None);  // only 7 rows
-    CHECK(hitTest(Screen::StopList, 9, 20, 20, arg) == Action::Back);
+    CHECK(hitTest(Screen::StopList, 9, 100, 72 + 56 * 6 + 5, arg) == Action::PickStop && arg == 6);
+    CHECK(hitTest(Screen::StopList, 9, 100, 72 + 56 * 7 + 5, arg) == Action::None);  // only 7 rows
+    CHECK(hitTest(Screen::StopList, 9, 20, 40, arg) == Action::Back);
 
     CHECK(hitTest(Screen::Error, 0, 160, 360, arg) == Action::Retry);
     CHECK(hitTest(Screen::Error, 0, 160, 430, arg) == Action::Choose);
