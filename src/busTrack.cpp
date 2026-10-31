@@ -401,6 +401,9 @@ static int runDisplay() {
                 }
                 refresher.update(time(nullptr));
                 takeBoard();
+                std::cout << "board: " << boardStatusName(board.status)
+                          << (board.statusDetail.empty() ? "" : " (" + board.statusDetail + ")")
+                          << ", " << board.departures.size() << " departures" << std::endl;
                 e = onBoard(ui, board.status);
                 break;
             case Effect::Lookup:
@@ -426,6 +429,7 @@ static int runDisplay() {
                 }
                 break;
             case Effect::ShowStop:
+                std::cout << "picked stop row " << e.index << " of " << pick.size() << std::endl;
                 boardStop = pick[e.index];
                 e = Effect(Effect::FetchBoard);
                 break;
