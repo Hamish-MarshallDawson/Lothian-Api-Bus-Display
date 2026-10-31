@@ -140,6 +140,11 @@ static bool loadFixtureBoard(const std::string &path, time_t now, StopBoard &out
         out = boardFromStopEvents(doc[0], now);
         return true;
     }
+    // MultipleStopEvents response: {"stops": [...]}. Render its first stop.
+    if (doc.is_object() && doc.contains("stops") && doc["stops"].is_array() && !doc["stops"].empty()) {
+        out = boardFromStopEvents(doc["stops"][0], now);
+        return true;
+    }
     std::cerr << "Fixture " << path << " is neither a StopEvents array nor a status object\n";
     return false;
 }

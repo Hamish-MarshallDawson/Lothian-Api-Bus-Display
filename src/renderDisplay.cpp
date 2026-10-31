@@ -81,8 +81,6 @@ Color routeColour(const std::string &service) {
 // Toward white (the background): amount 0 keeps c, 255 gives BG.
 Color fadeToBg(Color c, uint8_t amount) { return gfx::mix(c, BG, amount); }
 
-// Minutes as the board shows them: capped at two digits, never negative
-std::string minutesText(int minutes) { return std::to_string(std::min(std::max(minutes, 0), 99)) + " min"; }
 
 // Header line of the board
 void drawBoardStatus(gfx::Canvas &c, const StopBoard &board, time_t now) {
@@ -129,44 +127,56 @@ void drawRow(gfx::Canvas &c, int r, const Departure &d, bool stale) {
     // Route pill, top left
     Color pillFill = cancelled ? fadeToBg(fill, 128) : fill;
     if (stale) pillFill = fadeToBg(pillFill, 128);
-    gfx::drawRoutePill(c, Rect{MARGIN, r + 8, PILL_W, PILL_H}, d.service.substr(0, 3), pillFill, F::kBold14);
+    gfx::drawRoutePill(c, Rect{MARGIN, r + 8, PILL_W, PILL_H}, d.service.substr(0, 3), pillFill, F::kBold16);
 
-    // Right side: text and its colour, plus the live icon
-    std::string right;
-    const FontFace *rightFont = &F::kBold22;
+    // Right side: the number (Bold 26) and a smaller "min" (SemiBold 16) on one baseline,
+    // or "Due" (Bold 26), or "Cancelled" (SemiBold 15). Live icon to the left of it.
+    const int rightEdge = SCREEN_W - MARGIN;
+    const int numBase = capBaselineOf(cy, F::kBold26);
+    const int gap = 5;
+    int rightW = 0;
     Color rightInk = TEXT;
+    std::string num, unit;
     if (cancelled) {
-        right = "Cancelled";
-        rightFont = &F::kSemiBold15;
+        rightW = gfx::textWidth(F::kSemiBold15, "Cancelled");
         rightInk = DANGER;
     } else if (due) {
-        right = "Due";
+        rightW = gfx::textWidth(F::kBold26, "Due");
         rightInk = ACCENT;
     } else {
-        right = minutesText(d.minutes);
+        num = std::to_string(std::min(std::max(d.minutes, 0), 99));
+        unit = "min";
+        rightW = gfx::textWidth(F::kBold26, num) + gap + gfx::textWidth(F::kSemiBold16, unit);
         rightInk = d.delayed ? WARN : (d.live ? TEXT : TEXT_MUTED);
     }
     if (stale) rightInk = fadeToBg(rightInk, 128);
-    const int rightW = gfx::textWidth(*rightFont, right);
-    const int rightEdge = SCREEN_W - MARGIN;
     const bool showIcon = d.live && !cancelled;
-    const int rightLeft = rightEdge - rightW - (showIcon ? 18 : 0);  // icon sits left of the text
-    gfx::drawText(c, *rightFont, rightEdge - rightW, capBaselineOf(cy, *rightFont), right, rightInk);
+    const int rightLeft = rightEdge - rightW - (showIcon ? 18 : 0);
+    if (cancelled) {
+        gfx::drawText(c, F::kSemiBold15, rightEdge - rightW, capBaselineOf(cy, F::kSemiBold15), "Cancelled", rightInk);
+    } else if (due) {
+        gfx::drawText(c, F::kBold26, rightEdge - rightW, numBase, "Due", rightInk);
+    } else {
+        const int unitW = gfx::textWidth(F::kSemiBold16, unit);
+        gfx::drawText(c, F::kSemiBold16, rightEdge - unitW, numBase, unit, rightInk);
+        gfx::drawTextIn(c, F::kBold26, Rect{0, 0, rightEdge - unitW - gap + 1, 0}, numBase,
+                        gfx::Align::Right, num, rightInk);
+    }
     if (showIcon) gfx::drawLiveIcon(c, rightLeft, cy, stale ? fadeToBg(ACCENT, 128) : ACCENT);
     if (d.delayed && !cancelled) {
         Color late = stale ? fadeToBg(WARN, 128) : WARN;
-        gfx::drawTextIn(c, F::kRegular12, Rect{0, 0, rightEdge + 1, 0}, r + 50, gfx::Align::Right, "Delayed", late);
+        gfx::drawTextIn(c, F::kRegular12, Rect{0, 0, rightEdge + 1, 0}, r + 51, gfx::Align::Right, "Delayed", late);
     }
 
     // Destination, one line under the pill, clear of the minutes
     Color ink = cancelled ? TEXT_MUTED : TEXT;
     if (stale) ink = fadeToBg(ink, 128);
     const int destMax = rightLeft - 8 - MARGIN;
-    const std::string dest = gfx::fitText(F::kRegular17, d.destination, destMax);
-    const int baseline = r + 43;
-    gfx::drawText(c, F::kRegular17, MARGIN, baseline, dest, ink);
+    const std::string dest = gfx::fitText(F::kRegular19, d.destination, destMax);
+    const int baseline = r + 45;
+    gfx::drawText(c, F::kRegular19, MARGIN, baseline, dest, ink);
     if (cancelled)  // strike through at mid x-height
-        c.hline(MARGIN, MARGIN + gfx::textWidth(F::kRegular17, dest) - 1, baseline - 6, ink);
+        c.hline(MARGIN, MARGIN + gfx::textWidth(F::kRegular19, dest) - 1, baseline - 7, ink);
 
     c.hline(MARGIN, SCREEN_W - MARGIN - 1, r + ROW_H - 1, stale ? fadeToBg(DIVIDER, 128) : DIVIDER);
 }
@@ -217,7 +227,7 @@ void drawChips(gfx::Canvas &c, const StopBoard &board) {
         if (d.hasMinutes && std::find(services.begin(), services.end(), d.service) == services.end())
             services.push_back(d.service);
 
-    const FontFace &f = F::kSemiBold13;
+    const FontFace &f = F::kSemiBold15;
     const int limit = SCREEN_W - MARGIN - 14;  // leave room for the chevron
     int x = MARGIN;
     for (const auto &s : services) {

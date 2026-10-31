@@ -48,8 +48,8 @@ constexpr int NOTICE_H = 28;  // alert banner height
 constexpr int ROW_H    = 56;
 
 // Route pills (in rows) and chips (under the header)
-constexpr int PILL_W = 40, PILL_H = 18, PILL_R = 3;
-constexpr int CHIP_MIN_W = 32, CHIP_H = 20;
+constexpr int PILL_W = 44, PILL_H = 22, PILL_R = 3;
+constexpr int CHIP_MIN_W = 40, CHIP_H = 22;
 
 // Legacy board metrics, used by the old board until it is rewritten
 constexpr int FOOTER_Y = 432;
@@ -64,7 +64,7 @@ constexpr Rect kDirIntoZone  {0, 72, 160, 48};                  // tap zone: int
 constexpr Rect kDirOutZone   {160, 72, 160, 48};                // tap zone: out of city
 constexpr Rect kDirInto      {12, 76, 144, 40};                 // drawn button: into city
 constexpr Rect kDirOut       {165, 76, 144, 40};                // drawn button: out of city
-constexpr int  kChipsTop     = 126;                             // route chips, 20 px tall
+constexpr int  kChipsTop     = 125;                             // route chips, 22 px tall
 constexpr int  kSectionTop   = 148;                             // "Upcoming departures" band, 148-171
 constexpr int  kAlertTop     = 172;                             // alert banner, 28 px when shown
 constexpr int  kRowsTop      = 172;                             // first row without an alert banner

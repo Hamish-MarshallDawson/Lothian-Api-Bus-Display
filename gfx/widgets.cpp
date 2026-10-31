@@ -71,7 +71,7 @@ void drawStopHeader(Canvas &c, const StopHeaderText &h) {
     std::string title = h.name;
     if (!h.indicator.empty()) title += " (" + h.indicator + ")";
     const int x = MARGIN + 18 + 10;
-    const FontFace &f = F::kBold20;
+    const FontFace &f = F::kBold22;
     drawText(c, f, x, centredBaseline(zone.y, zone.h, f), fitText(f, title, right - x), TEXT);
 }
 
