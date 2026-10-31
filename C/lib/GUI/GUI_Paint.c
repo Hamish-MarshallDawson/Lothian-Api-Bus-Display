@@ -193,7 +193,7 @@ void Paint_SetPixel(UWORD Xpoint, UWORD Ypoint, UWORD Color)
         else
             Paint.Image[Addr] = Rdata | (0x80 >> (X % 8));
     } else {
-        Color = ((Color<<8)&0xff00)|(Color>>8);
+        // Native RGB565. The LCD flush (flushToLcd) does the byte order and the x flip.
         UDOUBLE Addr = X  + Y * Paint.WidthByte;
         Paint.Image[Addr] = Color;
     }

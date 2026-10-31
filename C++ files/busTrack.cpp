@@ -27,7 +27,8 @@
 #include "departures.h"
 #include "openmappull.h"    // getNearestStops, getNearestStopsGrouped
 #include "png_write.h"
-#include "renderDisplay.h"  // drawMainScreen, displayBuffer, shared UI state
+#include "renderDisplay.h"  // drawMainScreen, flushToLcd, shared UI state
+#include "../gfx/theme.h"   // HEADER_H
 #include "settings.h"
 
 extern "C" {
@@ -65,6 +66,7 @@ struct Options {
     std::string screen = "main";// --screen
     std::string fetchStop;      // --fetch
     time_t now = 0;             // --now (0 = real clock)
+    int ageSecs = 0;            // --age: render as if the data is this many seconds old
 };
 
 static bool parseOptions(int argc, char **argv, Options &o) {
@@ -75,6 +77,7 @@ static bool parseOptions(int argc, char **argv, Options &o) {
         else if (arg == "--fixture" && hasNext) o.fixturePath = argv[++i];
         else if (arg == "--screen" && hasNext) o.screen = argv[++i];
         else if (arg == "--fetch" && hasNext) o.fetchStop = argv[++i];
+        else if (arg == "--age" && hasNext) o.ageSecs = std::atoi(argv[++i]);
         else if (arg == "--now" && hasNext) {
             std::tm tm{};
             std::istringstream in(argv[++i]);
@@ -159,17 +162,19 @@ static int runSnapshot(const Options &o) {
         return 2;
     }
 
-    // Same Paint setup as the display loop, so the PNG is the buffer the LCD gets
+    // The frame as the person sees it. The PNG is that frame, unflipped; the LCD
+    // flush is the only place that flips it for the panel.
     const int w = ST7796_WIDTH, h = ST7796_HEIGHT;
     UWORD *buffer = static_cast<UWORD *>(malloc(sizeof(UWORD) * w * h));
     if (!buffer) { std::cerr << "Out of memory\n"; return 1; }
     Paint_NewImage(buffer, w, h, 0, BLACK, 16);
-    Paint_SetMirroring(MIRROR_HORIZONTAL);
     Paint_Clear(BLACK);
+    gfx::Canvas frame(buffer, w, h);
 
-    drawMainScreen(buffer, board);
+    // --age shows the same board as if it were that many seconds old (stale states)
+    drawMainScreen(frame, board, board.fetchedAt + o.ageSecs);
 
-    bool ok = writePngRGB565(o.snapshotPath, buffer, w, h);
+    bool ok = writePngRGB565(o.snapshotPath, frame.data(), w, h);
     free(buffer);
     if (!ok) { std::cerr << "Could not write " << o.snapshotPath << "\n"; return 1; }
 
@@ -280,13 +285,13 @@ static int runDisplay() {
         return 1;
     }
     Paint_NewImage(BlackImage, ST7796_WIDTH, ST7796_HEIGHT, 0, BLACK, 16);
-    Paint_SetMirroring(MIRROR_HORIZONTAL);
     Paint_Clear(BLACK);
+    gfx::Canvas frame(BlackImage, ST7796_WIDTH, ST7796_HEIGHT);
 
     // Welcome message
     Paint_DrawString_EN(70, 200, "Bus Tracker", &Font24, WHITE, WHITE);
     Paint_DrawString_EN(70, 230, "Starting...", &Font20, WHITE, WHITE);
-    displayBuffer(BlackImage);
+    flushToLcd(frame);
     DEV_Delay_ms(1000);
 
     //decides whether to show dropdown menu
@@ -307,8 +312,8 @@ static int runDisplay() {
                 std::cerr << "Board status: " << boardStatusName(board.status)
                           << " " << board.statusDetail << std::endl;
             }
-            drawMainScreen(BlackImage, board);
-            displayBuffer(BlackImage);
+            drawMainScreen(frame, board, time(nullptr));
+            flushToLcd(frame);
         }
 
         // If menu should be shown, draw it on top
@@ -328,7 +333,7 @@ static int runDisplay() {
 
             if (g_showDirectionModal) {
                 drawDirectionChoiceModal();
-                displayBuffer(BlackImage);
+                flushToLcd(frame);
             } else {
                 bool usingGrouped = !g_dropdownStops.empty();
                 size_t sourceSize = usingGrouped ? g_dropdownStops.size() : busStops.size();
@@ -345,7 +350,7 @@ static int runDisplay() {
                         Paint_DrawString_EN(20, itemY + 12, name.c_str(), &Font16, BLACK, bgColor);
                     }
                 }
-                displayBuffer(BlackImage);
+                flushToLcd(frame);
             }
         }
 
@@ -367,7 +372,7 @@ static int runDisplay() {
                 std::cout << "Touch detected at (" << touchX << ", " << touchY << ")" << std::endl;
 
                 // Tap the top area: open the dropdown + direction modal
-                if (touchY < 50) {
+                if (touchY < theme::HEADER_H) {  // the header band opens the picker
                     std::cout << "Dropdown touched" << std::endl;
                     g_showDirectionModal = true;
                     g_dirChoice = DirectionChoice::None;
@@ -453,7 +458,7 @@ static int runDisplay() {
                 std::cout << "No activity detected, turning off display to save power." << std::endl;
                 std::cout << "Current time: " << std::put_time(timeinfo, "%H:%M:%S") << std::endl;
                 Paint_Clear(BLACK);
-                displayBuffer(BlackImage);
+                flushToLcd(frame);
 
                 st7796_sleep();
                 backlight_off();
@@ -474,7 +479,7 @@ static int runDisplay() {
                 }
                 st7796_wakeup();
                 backlight_on();
-                displayBuffer(BlackImage);
+                flushToLcd(frame);
                 break;
             }
         }
