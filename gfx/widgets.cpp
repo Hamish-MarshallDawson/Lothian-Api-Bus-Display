@@ -1,5 +1,6 @@
 #include "widgets.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -129,6 +130,42 @@ void drawChevron(Canvas &c, int x, int cy, Color ink, bool right) {
     } else {
         chevronStroke(c, x + 5, cy - 5, x, cy, ink);
         chevronStroke(c, x, cy, x + 5, cy + 5, ink);
+    }
+}
+
+}  // namespace gfx
+
+namespace gfx {
+
+std::vector<Rect> chipLayout(const std::vector<std::string> &labels, bool &overflow) {
+    std::vector<Rect> zones;
+    overflow = false;
+    const FontFace &f = fonts::kSemiBold15;
+    const int limit = SCREEN_W - MARGIN - 16;  // leave room for the chevron
+    int x = MARGIN;
+    for (const auto &s : labels) {
+        const int w = std::max(CHIP_MIN_W, textWidth(f, s) + 16);
+        if (x + w > limit) { overflow = true; break; }
+        zones.push_back(Rect{x, kChipsTop, w, CHIP_BAND_H});
+        x += w + 6;
+    }
+    return zones;
+}
+
+void drawChip(Canvas &c, Rect band, const std::string &label, Color fill, bool hidden) {
+    const FontFace &f = fonts::kSemiBold15;
+    const Rect drawn{band.x, band.y + (band.h - CHIP_H) / 2, band.w, CHIP_H};
+    if (hidden) {
+        c.fillRoundRect(drawn, PILL_R, TEXT_MUTED);                                   // 1 px border...
+        c.fillRoundRect(Rect{drawn.x + 1, drawn.y + 1, drawn.w - 2, drawn.h - 2}, PILL_R - 1, BG);
+        const int base = centredBaseline(drawn.y, drawn.h, f);
+        drawTextIn(c, f, drawn, base, Align::Center, label, TEXT_MUTED);
+        const int tw = textWidth(f, label);
+        const int sx = drawn.x + (drawn.w - tw) / 2;
+        c.hline(sx, sx + tw - 1, drawn.y + drawn.h / 2, TEXT_MUTED);                  // struck through
+    } else {
+        c.fillRoundRect(drawn, PILL_R, fill);
+        drawTextIn(c, f, drawn, centredBaseline(drawn.y, drawn.h, f), Align::Center, label, readableOn(fill));
     }
 }
 

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <ctime>
+#include <set>
+#include <string>
 
 #include "departures.h"
 #include "screens.h"  // StopDirection
@@ -23,4 +25,5 @@ void flushToLcd(const gfx::Canvas &frame);
 // age come from board.fetchedAt, and `now` is the reference for "how old is it",
 // so snapshots are repeatable when --now is given. `dir` selects the direction
 // button that is filled.
-void drawMainScreen(gfx::Canvas &frame, const StopBoard &board, time_t now, StopDirection dir);
+void drawMainScreen(gfx::Canvas &frame, const StopBoard &board, time_t now, StopDirection dir,
+                    const std::set<std::string> &hidden = std::set<std::string>());

@@ -74,6 +74,12 @@ StopBoard boardFromStopEvents(const json &stopObj, time_t now) {
         if (!ev.is_object()) continue;
         Departure d;
         d.service = jstr(ev, "publicservicename");
+        d.operatorCode = jstr(ev, "operator");
+        auto journey = ev.find("journey");
+        if (journey != ev.end() && journey->is_object()) {
+            d.journeyId = jstr(*journey, "id");
+            d.journeyStart = jstr(*journey, "start");
+        }
         d.destination = jstr(ev, "destination");
         const std::string status = jstr(ev, "status");
         d.cancelled = (status == "cancelled");
