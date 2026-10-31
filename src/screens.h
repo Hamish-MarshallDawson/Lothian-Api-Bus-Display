@@ -52,26 +52,11 @@ constexpr int kStopRowsY = 72;
 constexpr int kStopRowH = 64;
 constexpr int kMaxStopRows = 6;   // (480 - 72) / 64 rows fit
 
-// Board: route chips and departure rows. Provisional here until they move to
-// theme.h; renderDisplay.cpp draws them at these rects.
+// Board: route chips and departure rows. Their touch zones are the drawn ones: the chip
+// zones come from gfx::chipLayout and the row zones from theme::rowRect. busTrack stores
+// them in UiState before each frame, so the taps and the drawing agree.
 constexpr int kMaxChips = 6;
-constexpr int kChipY = 124;
-constexpr int kChipH = 32;
-constexpr int kChipW = 44;
-constexpr Rect chipRect(int i) { return Rect{12 + i * 50, kChipY, kChipW, kChipH}; }
-constexpr int kBoardSectionTop = 160;   // "Upcoming departures" label, 24 px band
-constexpr int kBoardRowsTop = 192;
-constexpr int kBoardRowH = 56;
-constexpr int kBoardMaxRows = 5;        // (480 - 192) / 56
-// The alert banner sits under the section label; with one, the rows start lower.
-constexpr int kBoardAlertTop = kBoardSectionTop + 24;
-constexpr int kBoardAlertH = 28;                              // theme::NOTICE_H
-constexpr int kBoardRowsTopAlert = kBoardAlertTop + kBoardAlertH + 4;
-constexpr int boardRowsTopFor(bool alert) { return alert ? kBoardRowsTopAlert : kBoardRowsTop; }
-constexpr int boardSlotsFor(bool alert) { return (kScreenH - boardRowsTopFor(alert)) / kBoardRowH; }
-constexpr Rect boardRow(int i, int rowsTop = kBoardRowsTop) {
-    return Rect{0, rowsTop + kBoardRowH * i, 320, kBoardRowH};
-}
+constexpr int kBoardMaxRows = 5;        // rows that fit below the chips (theme::rowRect, 52 px)
 
 // The bus detail screen refreshes this often while it is open.
 constexpr int kDetailRefreshS = 15;
@@ -91,7 +76,8 @@ struct UiState {
     int stopCount = 0;                        // rows in the current stop list
     int chipCount = 0;                        // route chips on the board
     int rowCount = 0;                         // departure rows on the board (after hiding)
-    int rowsTop = kBoardRowsTop;              // where the board rows start (lower with an alert)
+    Rect chipZones[kMaxChips] = {};           // the chips' touch zones, as drawn (from gfx::chipLayout)
+    Rect rowZones[kBoardMaxRows] = {};        // the rows' touch zones, as drawn (from theme::rowRect)
     int detailRow = -1;                       // the row the bus detail screen is for
 };
 

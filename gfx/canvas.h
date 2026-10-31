@@ -32,6 +32,8 @@ public:
 
     void clear(Color c);
     void fillRect(Rect r, Color c);
+    // Source-over blend of a whole rect with coverage alpha (255 = solid)
+    void fillRectBlend(Rect r, Color c, uint8_t alpha);
     // Corners are anti-aliased (4x4 coverage). radius is clamped to half the size.
     void fillRoundRect(Rect r, int radius, Color c);
     void hline(int x0, int x1, int y, Color c);           // inclusive x range

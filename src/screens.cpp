@@ -49,9 +49,9 @@ int listHits(const UiState &st, Hit *out, int max) {
         add(kBoardInto, Action::PickInto, 0);
         add(kBoardOut, Action::PickOut, 0);
         const int chips = st.chipCount < kMaxChips ? st.chipCount : kMaxChips;
-        for (int i = 0; i < chips; ++i) add(chipRect(i), Action::ToggleRoute, i);
+        for (int i = 0; i < chips; ++i) add(st.chipZones[i], Action::ToggleRoute, i);
         const int rows = st.rowCount < kBoardMaxRows ? st.rowCount : kBoardMaxRows;
-        for (int i = 0; i < rows; ++i) add(boardRow(i, st.rowsTop), Action::OpenDetail, i);
+        for (int i = 0; i < rows; ++i) add(st.rowZones[i], Action::OpenDetail, i);
         break;
     }
     case Screen::BusDetail:

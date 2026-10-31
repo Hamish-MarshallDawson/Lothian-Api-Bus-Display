@@ -25,8 +25,5 @@ void drawStopListScreen(gfx::Canvas &c, const std::string &title,
 void drawErrorScreen(gfx::Canvas &c, ErrorReason r, int retryInSecs, long staleSecs, time_t now);
 void drawEmptyScreen(gfx::Canvas &c, const std::string &stopName, time_t now);
 void drawAsleepScreen(gfx::Canvas &c);
-// The bus detail for one departure (null if that row has gone). A placeholder until
-// lbd-ui-board draws the map and the live position.
-void drawBusDetailScreen(gfx::Canvas &c, const Departure *d, time_t now);
 
 #endif // SCREENS_DRAW_H

@@ -45,11 +45,11 @@ constexpr int MARGIN   = 12;
 constexpr int STATUS_H = 24;
 constexpr int HEADER_H = 72;  // status bar plus stop header: the top chrome of the board
 constexpr int NOTICE_H = 28;  // alert banner height
-constexpr int ROW_H    = 56;
+constexpr int ROW_H    = 52;  // five rows fit below the alert banner
 
 // Route pills (in rows) and chips (under the header)
 constexpr int PILL_W = 44, PILL_H = 22, PILL_R = 3;
-constexpr int CHIP_MIN_W = 40, CHIP_H = 22;
+constexpr int CHIP_MIN_W = 40, CHIP_H = 32, CHIP_BAND_H = 40;  // chip band is the touch zone
 
 // Legacy board metrics, used by the old board until it is rewritten
 constexpr int FOOTER_Y = 432;
@@ -64,11 +64,14 @@ constexpr Rect kDirIntoZone  {0, 72, 160, 48};                  // tap zone: int
 constexpr Rect kDirOutZone   {160, 72, 160, 48};                // tap zone: out of city
 constexpr Rect kDirInto      {12, 76, 144, 40};                 // drawn button: into city
 constexpr Rect kDirOut       {165, 76, 144, 40};                // drawn button: out of city
-constexpr int  kChipsTop     = 125;                             // route chips, 22 px tall
-constexpr int  kSectionTop   = 148;                             // "Upcoming departures" band, 148-171
-constexpr int  kAlertTop     = 172;                             // alert banner, 28 px when shown
-constexpr int  kRowsTop      = 172;                             // first row without an alert banner
-constexpr int  kRowsTopAlert = 200;                             // first row with an alert banner
+constexpr int  kChipsTop     = 120;                             // chip band 120-159 (touch zones)
+constexpr int  kSectionTop   = 160;                             // "Upcoming departures" band, 160-183
+constexpr int  kAlertTop     = 184;                             // alert banner, 28 px when shown
+constexpr int  kRowsTop      = 184;                             // first row without an alert banner
+constexpr int  kRowsTopAlert = 212;                             // first row with an alert banner
+
+// Touch zone and draw area of row i (0-based) when the rows start at rowsTop
+constexpr Rect rowRect(int index, int rowsTop) { return Rect{0, rowsTop + index * ROW_H, SCREEN_W, ROW_H}; }
 
 // Data age thresholds, seconds
 constexpr int STALE_WARN_S = 90;

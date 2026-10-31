@@ -9,6 +9,8 @@
 #include "text.h"
 #include "theme.h"
 #include "widgets.h"
+#include "map.h"
+#include <cmath>
 #include "fonts/faces.h"
 #include "fonts/faces.h"
 #include "fonts/faces.h"
@@ -155,6 +157,36 @@ int main() {
         Canvas c(buf.data(), W, H);
         drawRoutePill(c, Rect{0, 0, 40, 18}, "1", rgb(0x98, 0xC8, 0xED), fonts::kBold14);
         CHECK(buf[2 * W + 2] == rgb(0x98, 0xC8, 0xED));
+    }
+
+    // Web Mercator: round trip, and a known point (Greenwich, equator, zoom 1 centre)
+    {
+        WorldPoint w = worldPixel(GeoPoint{0.0, 0.0}, 1);
+        CHECK(std::fabs(w.x - 256.0) < 1e-6 && std::fabs(w.y - 256.0) < 1e-6);
+        GeoPoint back = geoFromWorld(worldPixel(GeoPoint{55.9521, -3.1965}, 15), 15);
+        CHECK(std::fabs(back.lat - 55.9521) < 1e-6 && std::fabs(back.lon + 3.1965) < 1e-6);
+    }
+
+    // Map: no tiles on disk gives the plain background; a path draws its colour;
+    // a missing tile is remembered as missing (nullptr), not an error
+    {
+        const int W = 120, H = 100;
+        std::vector<Color> buf(W * H, theme::BG);
+        Canvas c(buf.data(), W, H);
+        TileStore tiles("/nonexistent-tile-dir");
+        CHECK(tiles.get(15, 16095, 10187) == nullptr);
+        MapScene s;
+        s.rect = Rect{0, 0, W, H};
+        s.paths.push_back(MapPath{{GeoPoint{55.950, -3.200}, GeoPoint{55.954, -3.190}}, rgb(0x8C, 0x17, 0x13), 4});
+        fitScene(s, {GeoPoint{55.950, -3.200}, GeoPoint{55.954, -3.190}}, 10);
+        drawMap(c, s, tiles);
+        int fallback = 0, route = 0;
+        for (Color p : buf) {
+            fallback += (p == kMapFallback);
+            route += (p == rgb(0x8C, 0x17, 0x13));
+        }
+        CHECK(fallback > W * H / 2);
+        CHECK(route > 20);
     }
 
     if (failures == 0) std::printf("gfx: all checks passed\n");

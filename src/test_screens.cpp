@@ -22,12 +22,16 @@ static bool overlaps(const Rect &a, const Rect &b) {
     return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 }
 
-// A board state with chips and rows, for hit tests
+// A board state with chips and rows, for hit tests. The zones stand in for what
+// busTrack takes from gfx::chipLayout and theme::rowRect: chips 44 x 32 in a row at
+// y 124, rows 52 px from y 184.
 static UiState boardState(int chips, int rows) {
     UiState st;
     st.screen = Screen::Board;
     st.chipCount = chips;
     st.rowCount = rows;
+    for (int i = 0; i < kMaxChips; ++i) st.chipZones[i] = Rect{12 + i * 50, 124, 44, 32};
+    for (int i = 0; i < kBoardMaxRows; ++i) st.rowZones[i] = Rect{0, 184 + 52 * i, 320, 52};
     return st;
 }
 
@@ -61,8 +65,8 @@ static void testLayout() {
         }
     }
     // Chips and rows sit below the Into/Out buttons (y 72-119) and above the rows
-    CHECK(chipRect(0).y >= 120 && chipRect(0).y + chipRect(0).h <= 160);
-    CHECK(boardRow(0).y >= kBoardSectionTop + 24);
+    CHECK(boardState(1, 1).chipZones[0].y >= 120 && boardState(1, 1).chipZones[0].y + 32 <= 160);
+    CHECK(boardState(1, 1).rowZones[0].y >= 160 + 24);
 }
 
 static void testBoardHitTest() {
@@ -79,12 +83,12 @@ static void testBoardHitTest() {
     CHECK(hitTest(boardState(1, 4), 30, 140, arg) == Action::ToggleRoute && arg == 0);   // chip 0 at x 12-55
     CHECK(hitTest(boardState(1, 4), 80, 140, arg) == Action::None);                       // chip 1 not shown
 
-    // Rows: row 2 is y 304..359; rows past rowCount do nothing
-    CHECK(hitTest(st, 100, 310, arg) == Action::OpenDetail && arg == 2);
+    // Rows: row 2 is y 288..339; rows past rowCount do nothing
+    CHECK(hitTest(st, 100, 300, arg) == Action::OpenDetail && arg == 2);
     CHECK(hitTest(st, 100, 60 + 56 * 4 + 200, arg) == Action::None);
-    CHECK(hitTest(boardState(3, 2), 100, 310, arg) == Action::None);   // only 2 rows
-    CHECK(hitTest(boardState(3, 9), 100, 192 + 56 * 4 + 5, arg) == Action::OpenDetail && arg == 4);
-    CHECK(hitTest(boardState(3, 9), 100, 192 + 56 * 5 + 5, arg) == Action::None);   // 5 rows fit
+    CHECK(hitTest(boardState(3, 2), 100, 300, arg) == Action::None);   // only 2 rows
+    CHECK(hitTest(boardState(3, 9), 100, 184 + 52 * 4 + 5, arg) == Action::OpenDetail && arg == 4);
+    CHECK(hitTest(boardState(3, 9), 100, 184 + 52 * 5 + 5, arg) == Action::None);   // 5 rows fit
 }
 
 static void testStopListAndErrorHitTest() {

@@ -12,6 +12,7 @@ extern "C" {
 }
 
 #include <algorithm>
+#include <set>
 #include <cstdio>
 #include <ctime>
 #include <string>
@@ -117,9 +118,9 @@ void drawBoardStatus(gfx::Canvas &c, const StopBoard &board, time_t now) {
 // Baseline that centres a face's cap height on cy
 int capBaselineOf(int cy, const FontFace &f) { return cy + (f.size * 35 + 50) / 100; }
 
-// One departure, 56 px row at top r: pill and destination on the left, minutes on the right
+// One departure, 52 px row at top r: pill and destination on the left, minutes on the right
 void drawRow(gfx::Canvas &c, int r, const Departure &d, bool stale) {
-    const int cy = r + 28;                       // the row's centre line
+    const int cy = r + 26;                       // the row's centre line
     const bool cancelled = d.cancelled;
     const bool due = !cancelled && d.minutes <= 0;
     const Color fill = routeColour(d.service);
@@ -127,7 +128,7 @@ void drawRow(gfx::Canvas &c, int r, const Departure &d, bool stale) {
     // Route pill, top left
     Color pillFill = cancelled ? fadeToBg(fill, 128) : fill;
     if (stale) pillFill = fadeToBg(pillFill, 128);
-    gfx::drawRoutePill(c, Rect{MARGIN, r + 8, PILL_W, PILL_H}, d.service.substr(0, 3), pillFill, F::kBold16);
+    gfx::drawRoutePill(c, Rect{MARGIN, r + 6, PILL_W, PILL_H}, d.service.substr(0, 3), pillFill, F::kBold16);
 
     // Right side: the number (Bold 26) and a smaller "min" (SemiBold 16) on one baseline,
     // or "Due" (Bold 26), or "Cancelled" (SemiBold 15). Live icon to the left of it.
@@ -165,7 +166,7 @@ void drawRow(gfx::Canvas &c, int r, const Departure &d, bool stale) {
     if (showIcon) gfx::drawLiveIcon(c, rightLeft, cy, stale ? fadeToBg(ACCENT, 128) : ACCENT);
     if (d.delayed && !cancelled) {
         Color late = stale ? fadeToBg(WARN, 128) : WARN;
-        gfx::drawTextIn(c, F::kRegular12, Rect{0, 0, rightEdge + 1, 0}, r + 51, gfx::Align::Right, "Delayed", late);
+        gfx::drawTextIn(c, F::kRegular12, Rect{0, 0, rightEdge + 1, 0}, r + 48, gfx::Align::Right, "Delayed", late);
     }
 
     // Destination, one line under the pill, clear of the minutes
@@ -173,7 +174,7 @@ void drawRow(gfx::Canvas &c, int r, const Departure &d, bool stale) {
     if (stale) ink = fadeToBg(ink, 128);
     const int destMax = rightLeft - 8 - MARGIN;
     const std::string dest = gfx::fitText(F::kRegular19, d.destination, destMax);
-    const int baseline = r + 45;
+    const int baseline = r + 41;
     gfx::drawText(c, F::kRegular19, MARGIN, baseline, dest, ink);
     if (cancelled)  // strike through at mid x-height
         c.hline(MARGIN, MARGIN + gfx::textWidth(F::kRegular19, dest) - 1, baseline - 7, ink);
@@ -200,8 +201,8 @@ void drawStatusBlock(gfx::Canvas &c, int top, int bottom, const std::string &tit
 
 // The alert banner: a count, the first notice's text, a chevron to open the detail
 void drawAlertBanner(gfx::Canvas &c, const StopBoard &board) {
-    c.fillRect(Rect{0, kBoardAlertTop, SCREEN_W, NOTICE_H}, ALERT_BG);
-    const int cy = kBoardAlertTop + NOTICE_H / 2;
+    c.fillRect(Rect{0, kAlertTop, SCREEN_W, NOTICE_H}, ALERT_BG);
+    const int cy = kAlertTop + NOTICE_H / 2;
     c.fillRoundRect(Rect{MARGIN, cy - 7, 14, 14}, 7, ALERT_FG);        // info circle
     c.fillRect(Rect{MARGIN + 6, cy - 3, 2, 5}, BG);                     // "i" stem
     c.fillRect(Rect{MARGIN + 6, cy - 5, 2, 2}, BG);                     // "i" dot
@@ -209,7 +210,7 @@ void drawAlertBanner(gfx::Canvas &c, const StopBoard &board) {
     const size_t n = board.notices.size();
     std::string head = std::to_string(n) + (n == 1 ? " active alert" : " active alerts");
     const FontFace &f = F::kSemiBold13;
-    const int base = gfx::centredBaseline(kBoardAlertTop, NOTICE_H, f);
+    const int base = gfx::centredBaseline(kAlertTop, NOTICE_H, f);
     gfx::drawText(c, f, MARGIN + 20, base, head, TEXT);
     const int x = MARGIN + 20 + gfx::textWidth(f, head) + 8;
     const int maxW = SCREEN_W - 28 - x;
@@ -221,46 +222,40 @@ void drawAlertBanner(gfx::Canvas &c, const StopBoard &board) {
 
 // Route chips: each service at this stop, in the order they first appear. A chevron
 // stands in for the rest when they do not fit.
-// Each chip is a fixed rect (chipRect), the same one the touch code uses. A hidden
-// route is outlined and struck through, so tapping it shows it again.
-void drawChips(gfx::Canvas &c, const StopBoard &board, const RouteSet &hidden) {
-    const std::vector<std::string> services = boardRoutes(board);
-    const FontFace &f = F::kSemiBold15;
-    const int shown = std::min(static_cast<int>(services.size()), kMaxChips);
-    for (int i = 0; i < shown; ++i) {
+void drawChips(gfx::Canvas &c, const StopBoard &board, const std::set<std::string> &hidden) {
+    std::vector<std::string> services;
+    for (const auto &d : board.departures)
+        if (d.hasMinutes && std::find(services.begin(), services.end(), d.service) == services.end())
+            services.push_back(d.service);
+
+    bool overflow = false;
+    const std::vector<Rect> zones = gfx::chipLayout(services, overflow);
+    for (size_t i = 0; i < zones.size(); ++i) {
         const std::string &s = services[i];
-        const ::Rect cr = chipRect(i);
-        const gfx::Rect r{cr.x, cr.y, cr.w, cr.h};
-        if (hidden.count(s)) {
-            c.fillRoundRect(r, 6, TEXT_MUTED);                                  // grey outline...
-            c.fillRoundRect(gfx::Rect{r.x + 1, r.y + 1, r.w - 2, r.h - 2}, 5, BG);   // ...white inside
-            gfx::drawTextIn(c, f, r, gfx::centredBaseline(r.y, r.h, f), gfx::Align::Center, s, TEXT_MUTED);
-            c.line(r.x + 6, r.y + r.h / 2, r.x + r.w - 6, r.y + r.h / 2, TEXT_MUTED);   // struck through
-        } else {
-            gfx::drawRoutePill(c, r, s, routeColour(s), f);
-        }
+        const bool isHidden = hidden.count(s) > 0;
+        gfx::drawChip(c, zones[i], s, routeColour(s), isHidden);
     }
+    if (overflow)
+        gfx::drawChevron(c, SCREEN_W - MARGIN - 4, kChipsTop + CHIP_BAND_H / 2, TEXT_MUTED, true);
 }
 
-// "Upcoming departures" with a maroon underline and a full-width rule
-void drawSectionLabel(gfx::Canvas &c, int hiddenCount) {
+// "Upcoming departures" with a maroon underline and a full-width rule. With routes hidden
+// the label says how many: "Upcoming departures - 2 routes hidden".
+void drawSectionLabel(gfx::Canvas &c, int hiddenRoutes) {
     const FontFace &f = F::kRegular13;
-    const std::string label = "Upcoming departures";
-    const int base = gfx::centredBaseline(kBoardSectionTop, 24, f);
+    std::string label = "Upcoming departures";
+    if (hiddenRoutes > 0)
+        label += " - " + std::to_string(hiddenRoutes) + (hiddenRoutes == 1 ? " route hidden" : " routes hidden");
+    const int base = gfx::centredBaseline(kSectionTop, 24, f);
     gfx::drawText(c, f, MARGIN, base, label, TEXT_MUTED);
-    c.fillRect(Rect{MARGIN, kBoardSectionTop + 21, gfx::textWidth(f, label), 2}, ACCENT);
-    if (hiddenCount > 0) {
-        const std::string note = " - " + std::to_string(hiddenCount) +
-                                 (hiddenCount == 1 ? " route hidden" : " routes hidden");
-        gfx::drawText(c, f, MARGIN + gfx::textWidth(f, label), base, note, TEXT_MUTED);
-    }
-    c.hline(0, SCREEN_W - 1, kBoardSectionTop + 23, DIVIDER);
+    c.fillRect(Rect{MARGIN, kSectionTop + 21, gfx::textWidth(f, "Upcoming departures"), 2}, ACCENT);
+    c.hline(0, SCREEN_W - 1, kSectionTop + 23, DIVIDER);
 }
 
 }  // namespace
 
 void drawMainScreen(gfx::Canvas &c, const StopBoard &board, time_t now, StopDirection dir,
-                    const RouteSet &hidden) {
+                    const std::set<std::string> &hidden) {
     c.clear(BG);
 
     drawBoardStatus(c, board, now);
@@ -274,21 +269,29 @@ void drawMainScreen(gfx::Canvas &c, const StopBoard &board, time_t now, StopDire
     gfx::drawButton(c, theme::kDirInto, "Into city", F::kSemiBold15, dir == StopDirection::Into);
     gfx::drawButton(c, theme::kDirOut, "Out of city", F::kSemiBold15, dir == StopDirection::Out);
 
+    // Hidden routes: counted in the label, left out of the rows (their chips stay, outlined)
+    int hiddenRoutes = 0;
+    {
+        std::set<std::string> seen;
+        for (const auto &d : board.departures)
+            if (hidden.count(d.service) && seen.insert(d.service).second) ++hiddenRoutes;
+    }
     drawChips(c, board, hidden);
-    int hiddenCount = 0;
-    for (const auto &r : boardRoutes(board)) hiddenCount += hidden.count(r) ? 1 : 0;
-    drawSectionLabel(c, hiddenCount);
+    drawSectionLabel(c, hiddenRoutes);
 
     const bool hasAlert = !board.notices.empty();
     if (hasAlert) drawAlertBanner(c, board);
-    const int rowsTop = boardRowsTopFor(hasAlert);
+    const int rowsTop = hasAlert ? kRowsTopAlert : kRowsTop;
 
     const bool stale = board.fetchedAt && now - board.fetchedAt >= STALE_DEAD_S &&
                        (board.status == BoardStatus::Ok || board.status == BoardStatus::NoDepartures);
 
-    const std::vector<const Departure *> rows = visibleRows(board, hidden);
+    std::vector<const Departure *> rows;
+    for (const auto &d : board.departures)
+        if (d.hasMinutes && !hidden.count(d.service)) rows.push_back(&d);
 
-    if (rows.empty() && hiddenCount > 0 && board.status == BoardStatus::Ok) {
+    if (rows.empty() && hiddenRoutes > 0 && board.status == BoardStatus::Ok) {
+        // Every route is hidden: say so, rather than "no buses"
         drawStatusBlock(c, rowsTop, SCREEN_H, "All routes hidden", TEXT, "Tap a route above to show it", false);
     } else if (rows.empty()) {
         const int bottom = SCREEN_H;
@@ -304,9 +307,9 @@ void drawMainScreen(gfx::Canvas &c, const StopBoard &board, time_t now, StopDire
             drawStatusBlock(c, rowsTop, bottom, "No buses in the next hour", TEXT, "", false);
         }
     } else {
-        const int slots = boardSlotsFor(hasAlert);   // the same count the touch rows use
+        const int slots = (SCREEN_H - rowsTop) / ROW_H;
         const int count = std::min(slots, static_cast<int>(rows.size()));
         for (int i = 0; i < count; ++i)
-            drawRow(c, rowsTop + i * kBoardRowH, *rows[i], stale);
+            drawRow(c, rowsTop + i * ROW_H, *rows[i], stale);
     }
 }

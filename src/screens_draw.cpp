@@ -171,25 +171,3 @@ void drawEmptyScreen(Canvas &c, const std::string &stopName, time_t now) {
 void drawAsleepScreen(Canvas &c) {
     c.clear(0);
 }
-
-void drawBusDetailScreen(Canvas &c, const Departure *d, time_t now) {
-    background(c);
-    statusBar(c, now, "", theme::TEXT);
-    header(c, "Bus", true);
-    if (!d) {
-        centredLine(c, 200, F::kRegular17, "This bus has gone", theme::TEXT_MUTED);
-        return;
-    }
-    gfx::drawText(c, F::kBold26, 20, 120, d->service, theme::ACCENT);
-    gfx::drawText(c, F::kRegular17, 20, 150, gfx::fitText(F::kRegular17, "to " + d->destination, 280),
-                  theme::TEXT);
-    if (d->hasMinutes) {
-        const std::string due = d->minutes <= 2 ? "Due" : std::to_string(d->minutes) + " min";
-        gfx::drawText(c, F::kBold22, 20, 200, due, d->cancelled ? theme::ALERT : theme::TEXT);
-    }
-    if (!d->scheduled.empty()) {
-        gfx::drawText(c, F::kRegular15, 20, 228, "Scheduled " + d->scheduled, theme::TEXT_MUTED);
-    }
-    gfx::drawText(c, F::kRegular13, 20, 300, "Live position: arriving with the tracking update",
-                  theme::TEXT_MUTED);
-}

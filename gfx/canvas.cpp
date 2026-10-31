@@ -116,3 +116,13 @@ void Canvas::line(int x0, int y0, int x1, int y1, Color c) {
 }
 
 }  // namespace gfx
+
+namespace gfx {
+
+void Canvas::fillRectBlend(Rect r, Color c, uint8_t alpha) {
+    Rect k = clipped(r);
+    for (int y = k.y; y < k.y + k.h; ++y)
+        for (int x = k.x; x < k.x + k.w; ++x) blendPixel(x, y, c, alpha);
+}
+
+}  // namespace gfx

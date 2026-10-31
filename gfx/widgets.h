@@ -2,6 +2,7 @@
 // and by every other screen, so the look lives in one place.
 #pragma once
 #include <string>
+#include <vector>
 
 #include "canvas.h"
 #include "text.h"
@@ -46,5 +47,17 @@ void drawLiveIcon(Canvas &c, int x, int cy, Color ink);
 
 // Chevron, 6x10, centred on (x, cy). right = true points right (">"), false points left ("<").
 void drawChevron(Canvas &c, int x, int cy, Color ink, bool right = true);
+
+}  // namespace gfx
+
+namespace gfx {
+
+// Route chips under the header. Each chip's touch zone is a band of CHIP_BAND_H px at
+// theme::kChipsTop; the drawn chip is CHIP_H px tall inside it. chipLayout() gives the zones of
+// the chips that fit, left to right, and sets overflow when some did not (a chevron stands in).
+std::vector<Rect> chipLayout(const std::vector<std::string> &labels, bool &overflow);
+
+// One chip. hidden: outlined grey with the number struck through, else the route colour.
+void drawChip(Canvas &c, Rect band, const std::string &label, Color fill, bool hidden);
 
 }  // namespace gfx
