@@ -1,5 +1,7 @@
 /*
- * Drawing for the bus display. Everything draws into a RGB565 Paint buffer.
+ * Drawing for the bus display. The main board draws into a gfx::Canvas (see
+ * .agents/DESIGN.md); the direction modal still uses GUI_Paint until lbd-ui-flows
+ * moves the other screens.
  */
 
 extern "C" {
@@ -14,15 +16,26 @@ extern "C" {
 
 #include <algorithm>
 #include <cstdio>
-#include <cstring>
 #include <ctime>
 #include <iostream>
 #include <string>
 #include <vector>
 
-#include "busColours.h"     // for bus route color mappings
+#include "busColours.h"     // route colours, exactly as Lothian publishes them
 #include "departures.h"
 #include "renderDisplay.h"
+#include "../gfx/canvas.h"
+#include "../gfx/fonts/cond_bold_12.h"
+#include "../gfx/fonts/cond_bold_24.h"
+#include "../gfx/fonts/cond_bold_28.h"
+#include "../gfx/fonts/cond_regular_12.h"
+#include "../gfx/fonts/cond_regular_14.h"
+#include "../gfx/fonts/cond_regular_16.h"
+#include "../gfx/fonts/cond_regular_20.h"
+#include "../gfx/fonts/cond_regular_24.h"
+#include "../gfx/text.h"
+#include "../gfx/theme.h"
+#include "../gfx/widgets.h"
 
 // Define the shared UI globals (declared in renderDisplay.h)
 DirectionChoice g_dirChoice = DirectionChoice::None;
@@ -31,85 +44,8 @@ std::vector<BusStopInfo> g_dropdownStops;
 bool g_showDirectionModal = false;
 std::string g_selectedStopID;
 
-// Helper function to convert hex color string to RGB565 format (UWORD)
-UWORD hexToRGB565(const std::string& hexColor) {
-    std::string hex = hexColor;
-    if (!hex.empty() && hex[0] == '#') {
-        hex = hex.substr(1);
-    }
-    if (hex.length() == 6) {
-        try {
-            unsigned int r = std::stoi(hex.substr(0, 2), nullptr, 16);
-            unsigned int g = std::stoi(hex.substr(2, 2), nullptr, 16);
-            unsigned int b = std::stoi(hex.substr(4, 2), nullptr, 16);
-            // RGB565: RRRRR GGGGGG BBBBB
-            return ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
-        } catch (...) {
-            return WHITE;
-        }
-    }
-    return WHITE;
-}
-
-// Helper function to get color for a bus route
-UWORD getRouteColor(const std::string& routeName) {
-    auto it = busLineColours.find(routeName);
-    if (it != busLineColours.end()) {
-        return hexToRGB565(it->second);
-    }
-    return WHITE;
-}
-
-// Helper function to truncate text to fit within maxWidth
-std::string truncateText(const std::string& text, int maxWidth, const sFONT* font) {
-    int maxChars = maxWidth / font->Width;
-    if (text.length() <= static_cast<size_t>(maxChars)) {
-        return text;
-    }
-    if (maxChars > 3) {
-        return text.substr(0, maxChars - 3) + "...";
-    }
-    return text.substr(0, maxChars);
-}
-
-// Helper function to split text into at most two lines that fit maxWidth
-std::vector<std::string> splitTextToFit(const std::string& text, int maxWidth, const sFONT* font) {
-    std::vector<std::string> lines;
-    int maxCharsPerLine = maxWidth / font->Width;
-
-    if (text.length() <= static_cast<size_t>(maxCharsPerLine)) {
-        lines.push_back(text);
-        return lines;
-    }
-
-    size_t pos = 0;
-    while (pos < text.length()) {
-        size_t remaining = text.length() - pos;
-        if (remaining <= static_cast<size_t>(maxCharsPerLine)) {
-            lines.push_back(text.substr(pos));
-            break;
-        }
-
-        // Find last space before maxCharsPerLine
-        size_t endPos = pos + maxCharsPerLine;
-        size_t spacePos = text.rfind(' ', endPos);
-
-        if (spacePos != std::string::npos && spacePos > pos) {
-            lines.push_back(text.substr(pos, spacePos - pos));
-            pos = spacePos + 1;
-        } else {
-            // No space found, force break
-            lines.push_back(text.substr(pos, maxCharsPerLine));
-            pos += maxCharsPerLine;
-        }
-
-        if (lines.size() >= 2) {
-            break;
-        }
-    }
-
-    return lines;
-}
+// ---------------------------------------------------------------------------
+// Flush to the LCD
 
 #ifdef BUSTRACKER_HW
 // Push the frame to the LCD, one row at a time. The panel's x axis runs the other
@@ -134,6 +70,40 @@ void flushToLcd(const gfx::Canvas &frame) {
 void flushToLcd(const gfx::Canvas &) {}
 #endif
 
+// ---------------------------------------------------------------------------
+// Route colours
+
+namespace {
+
+using gfx::Color;
+using gfx::FontFace;
+using gfx::Rect;
+using namespace theme;
+namespace fonts = gfx::fonts;
+
+// "#RRGGBB" to RGB565 with the same packing as gfx::rgb. Bad input gives the unknown-route grey.
+Color hexToColor(const std::string &hex) {
+    std::string h = hex;
+    if (!h.empty() && h[0] == '#') h.erase(0, 1);
+    unsigned r = 0, g = 0, b = 0;
+    if (h.size() != 6 || std::sscanf(h.c_str(), "%2x%2x%2x", &r, &g, &b) != 3) return BADGE_UNKNOWN;
+    return gfx::rgb(static_cast<uint8_t>(r), static_cast<uint8_t>(g), static_cast<uint8_t>(b));
+}
+
+// Route fill from busColours.h. Only routes missing from the map use the grey.
+Color routeColour(const std::string &service) {
+    auto it = busLineColours.find(service);
+    return it != busLineColours.end() ? hexToColor(it->second) : BADGE_UNKNOWN;
+}
+
+// Toward the background: amount 0 keeps c, 255 gives BG.
+Color fadeToBg(Color c, uint8_t amount) { return gfx::mix(c, BG, amount); }
+
+}  // namespace
+
+// ---------------------------------------------------------------------------
+// Direction modal (still GUI_Paint; busTrack draws it into the same buffer)
+
 void drawDirectionChoiceModal() {
     // simple centered panel
     int x0 = 40, x1 = 280;
@@ -152,131 +122,178 @@ void drawDirectionChoiceModal() {
     Paint_DrawString_EN(x0 + 10, into_y - 18, "Choose direction", &Font12, FONT_BACKGROUND, FONT_FOREGROUND);
 }
 
-// Text for the empty-list case, so an error is never shown as "no buses"
-static void drawEmptyState(const StopBoard &board) {
-    const int cy = ST7796_HEIGHT / 2 - 40;
-    switch (board.status) {
-        case BoardStatus::Loading:
-            Paint_DrawString_EN(40, cy, "Loading...", &Font24, WHITE, GRAY);
-            break;
-        case BoardStatus::NetworkError:
-            Paint_DrawString_EN(40, cy, "No data", &Font24, RED, GRAY);
-            Paint_DrawString_EN(40, cy + 30, "network error", &Font20, RED, GRAY);
-            break;
-        case BoardStatus::KeyRejected:
-            Paint_DrawString_EN(40, cy, "Key rejected", &Font24, RED, GRAY);
-            break;
-        case BoardStatus::RateLimited:
-            Paint_DrawString_EN(40, cy, "Rate limited", &Font24, RED, GRAY);
-            Paint_DrawString_EN(40, cy + 30, "try again soon", &Font20, RED, GRAY);
-            break;
-        default:  // Ok with nothing to list, or NoDepartures
-            Paint_DrawString_EN(40, cy, "No buses", &Font24, RED, GRAY);
-            Paint_DrawString_EN(40, cy + 30, "available", &Font24, RED, GRAY);
-            break;
-    }
+// ---------------------------------------------------------------------------
+// Main board
+
+namespace {
+
+const int kRowsTopNoNotice = HEADER_H + 8;                 // 72
+const int kRowsTopNotice = HEADER_H + NOTICE_H + 8;        // 96
+
+// Centred block in the rows area: a headline and an optional line under it.
+void drawCentredBlock(gfx::Canvas &c, int top, int bottom, const std::string &head, Color headInk,
+                      const std::string &sub) {
+    const int mid = (top + bottom) / 2;
+    gfx::drawTextIn(c, fonts::kCondBold24, Rect{0, 0, SCREEN_W, 0}, mid - 4, gfx::Align::Center, head, headInk);
+    if (!sub.empty())
+        gfx::drawTextIn(c, fonts::kCondRegular14, Rect{0, 0, SCREEN_W, 0}, mid + 18, gfx::Align::Center, sub, TEXT_MUTED);
 }
 
-void drawMainScreen(UWORD *image, const StopBoard &board) {
-    (void)image;  // the buffer is the Paint default one; kept for the call shape
-    Paint_Clear(GRAY);
+void drawNotice(gfx::Canvas &c, const StopBoard &board) {
+    c.fillRect(Rect{0, HEADER_H, SCREEN_W, NOTICE_H}, NOTICE_BG);
+    std::string t = board.notices.front();
+    if (board.notices.size() > 1) t += "  +" + std::to_string(board.notices.size() - 1);
+    gfx::drawText(c, fonts::kCondRegular14, MARGIN, HEADER_H + 16,
+                  gfx::fitText(fonts::kCondRegular14, t, SCREEN_W - 2 * MARGIN), NOTICE_FG);
+}
 
-    // Display constants
-    const int SCREEN_WIDTH = ST7796_WIDTH;   // 320
-    const int SCREEN_HEIGHT = ST7796_HEIGHT;  // 480
-    const int MARGIN = 5;
-    const int HEADER_START_Y = 20;
+// One departure, 72 px tall, at row top r. See DESIGN.md section 2.2.
+void drawRow(gfx::Canvas &c, int r, const Departure &d, bool stale) {
+    const bool cancelled = d.cancelled;
+    const Color fill = routeColour(d.service);
+    Color badge = cancelled ? fadeToBg(fill, 153) : fill;
+    Color ink = cancelled ? TEXT_MUTED : TEXT;
+    if (stale) { badge = fadeToBg(badge, 128); ink = fadeToBg(ink, 128); }
 
-    // Clock comes from the board's fetch time
-    time_t now = board.fetchedAt ? board.fetchedAt : time(nullptr);
-    struct tm* currentTime = localtime(&now);
+    // Badge: the number's text colour is the only thing computed; the fill is the route's.
+    c.fillRoundRect(Rect{MARGIN, r + 14, BADGE_W, BADGE_H}, BADGE_R, badge);
+    std::string label = d.service.substr(0, 3);
+    Color labelInk = gfx::readableOn(fill);
+    if (stale) labelInk = fadeToBg(labelInk, 128);
+    gfx::drawTextIn(c, fonts::kCondBold24, Rect{MARGIN, r + 14, BADGE_W, BADGE_H}, r + 44,
+                    gfx::Align::Center, label, labelInk);
 
-    int yPos = HEADER_START_Y;
-
-    // Draw header arrow (centered)
-    int arrowCenterX = SCREEN_WIDTH / 2;
-    Paint_DrawLine(arrowCenterX - 15, yPos, arrowCenterX, yPos + 15, WHITE, DOT_PIXEL_4X4, LINE_STYLE_SOLID);
-    Paint_DrawLine(arrowCenterX, yPos + 15, arrowCenterX + 15, yPos, WHITE, DOT_PIXEL_4X4, LINE_STYLE_SOLID);
-
-    yPos += 30;
-    Paint_DrawString_EN(MARGIN, yPos, "------------------", &Font24, WHITE, WHITE);
-
-    // Stop name (truncated to fit)
-    yPos += 20;
-    std::string displayStopName = truncateText(board.stopName, SCREEN_WIDTH - 60, &Font20);
-    Paint_DrawString_EN(30, yPos, displayStopName.c_str(), &Font20, BLACK, WHITE);
-
-    if (g_dirChoice == DirectionChoice::IntoCity) {
-        Paint_DrawString_EN(120, yPos + 20, "Into City", &Font12, GRAY, BLACK);
-    } else if (g_dirChoice == DirectionChoice::OutOfCity) {
-        Paint_DrawString_EN(120, yPos + 20, "Out of City", &Font12, GRAY, BLACK);
+    // Destination, up to two lines of 128 px
+    const FontFace &dest = fonts::kCondRegular20;
+    std::vector<std::string> lines = gfx::wrapText(dest, d.destination, 128, 2);
+    const int baselines[2] = {r + 31, r + 55};
+    for (size_t i = 0; i < lines.size(); ++i) {
+        gfx::drawText(c, dest, 84, baselines[i], lines[i], ink);
+        if (cancelled)  // strike-through at mid x-height
+            c.hline(84, 84 + gfx::textWidth(dest, lines[i]) - 1, baselines[i] - 6, ink);
     }
 
-    yPos += 40;
-    Paint_DrawString_EN(30, yPos, "Current Time: ", &Font20, WHITE, WHITE);
-    char timeString[10];
-    snprintf(timeString, sizeof(timeString), "%02d:%02d", currentTime->tm_hour, currentTime->tm_min);
-    Paint_DrawString_EN(220, yPos, timeString, &Font20, WHITE, WHITE);
-
-    // Cancelled services are not shown on the main screen
-    std::vector<const Departure*> shown;
-    for (const auto &d : board.departures) {
-        if (!d.cancelled && d.hasMinutes) shown.push_back(&d);
-    }
-
-    // Calculate available space and max buses that can fit
-    yPos += 60;
-    int busListStartY = yPos;
-    int availableHeight = SCREEN_HEIGHT - busListStartY - 20; // Leave 20px bottom margin
-    const int BUS_ROW_HEIGHT = 70;
-    int maxBuses = std::max(1, availableHeight / BUS_ROW_HEIGHT);
-    maxBuses = std::min(maxBuses, static_cast<int>(shown.size()));
-
-    if (shown.empty()) {
-        drawEmptyState(board);
-        return;
-    }
-
-    int busCount = 0;
-    for (const Departure *bus : shown) {
-        if (busCount >= maxBuses) break;
-
-        // Layout columns: [Route(60px)] [Destination(120px)] [Time(140px)]
-        const int ROUTE_X = 10;
-        const int ROUTE_WIDTH = 60;
-        const int DEST_X = ROUTE_X + ROUTE_WIDTH + 5;
-        const int DEST_WIDTH = 120;
-        const int TIME_X = DEST_X + DEST_WIDTH + 10;
-
-        std::string shortRoute = bus->service;
-        if (shortRoute.length() > 3) shortRoute = shortRoute.substr(0, 3);
-
-        UWORD routeColor = getRouteColor(bus->service);
-        Paint_DrawString_EN(ROUTE_X, yPos, shortRoute.c_str(), &Font48, routeColor, WHITE);
-
-        std::vector<std::string> destLines = splitTextToFit(bus->destination, DEST_WIDTH, &Font20);
-        if (destLines.size() == 1) {
-            Paint_DrawString_EN(DEST_X, yPos + 12, destLines[0].c_str(), &Font20, WHITE, WHITE);
-        } else if (destLines.size() >= 2) {
-            Paint_DrawString_EN(DEST_X, yPos + 4, destLines[0].c_str(), &Font20, WHITE, WHITE);
-            Paint_DrawString_EN(DEST_X, yPos + 24, destLines[1].c_str(), &Font20, WHITE, WHITE);
+    // Time column, right edge at x=308 (minutes: right edge at x=280)
+    const Rect right{0, 0, SCREEN_W - MARGIN, 0};
+    if (cancelled) {
+        gfx::drawTextIn(c, fonts::kCondBold24, right, r + 48, gfx::Align::Right, "CANC",
+                        stale ? fadeToBg(ALERT, 128) : ALERT);
+    } else if (d.minutes <= 0) {
+        Color due = d.live ? LIVE : TEXT_MUTED;
+        if (stale) due = fadeToBg(due, 128);
+        gfx::drawTextIn(c, fonts::kCondBold28, right, r + 48, gfx::Align::Right, "DUE", due);
+    } else {
+        Color num = d.delayed ? WARN : (d.live ? TEXT : TEXT_MUTED);
+        if (stale) num = fadeToBg(num, 128);
+        gfx::drawTextIn(c, fonts::kCondRegular16, right, r + 48, gfx::Align::Right, "min", num);
+        std::string n = std::to_string(std::min(d.minutes, 99));
+        gfx::drawTextIn(c, fonts::kCondRegular24, Rect{0, 0, 280, 0}, r + 48, gfx::Align::Right, n, num);
+        if (d.delayed) {
+            Color tag = stale ? fadeToBg(WARN, 128) : WARN;
+            gfx::drawTextIn(c, fonts::kCondBold12, right, r + 66, gfx::Align::Right, "LATE", tag);
+        } else if (!d.live) {
+            gfx::drawTextIn(c, fonts::kCondBold12, right, r + 66, gfx::Align::Right, "SCHED", TEXT_MUTED);
         }
+    }
 
-        int minutesUntilBus = std::max(0, bus->minutes);
-        if (bus->minutes <= 2 && bus->minutes >= -2) {
-            Paint_DrawString_EN(TIME_X, yPos + 4, "DUE", &Font48, RED, WHITE);
+    c.hline(MARGIN, SCREEN_W - MARGIN - 1, r + ROW_H - 1, DIVIDER);
+}
+
+// Footer: status dot and text on the left, the tap hint on the right.
+void drawFooter(gfx::Canvas &c, const StopBoard &board, time_t now) {
+    const bool errorState = board.status == BoardStatus::NetworkError ||
+                            board.status == BoardStatus::KeyRejected ||
+                            board.status == BoardStatus::RateLimited;
+    const bool hasData = board.fetchedAt != 0;
+    const long age = hasData ? static_cast<long>(now - board.fetchedAt) : 0;
+
+    bool anyLive = false;
+    for (const auto &d : board.departures) anyLive = anyLive || (d.hasMinutes && d.live && !d.cancelled);
+
+    std::string text;
+    Color dot = TEXT_MUTED;
+    char hhmm[8] = "";
+    if (hasData) {
+        std::tm *t = std::localtime(&board.fetchedAt);
+        std::snprintf(hhmm, sizeof hhmm, "%02d:%02d", t->tm_hour, t->tm_min);
+    }
+
+    if (board.status == BoardStatus::Loading) {
+        text = "Loading...";
+    } else if (errorState) {
+        dot = ALERT;
+        text = board.status == BoardStatus::NetworkError ? "No connection"
+             : board.status == BoardStatus::KeyRejected ? "Key rejected"
+             : "Rate limited";
+    } else if (age >= STALE_DEAD_S) {
+        dot = ALERT;
+        text = std::string("No live data since ") + hhmm;
+    } else if (age >= STALE_WARN_S) {
+        dot = WARN;
+        text = "Updated " + std::to_string(age / 60) + " min ago";
+    } else if (anyLive) {
+        dot = LIVE;
+        text = std::string("Live, updated ") + hhmm;
+    } else {
+        text = hasData ? std::string("Timetable times, ") + hhmm : "Timetable times";
+    }
+
+    const int hintW = gfx::textWidth(fonts::kCondRegular12, "Tap stop to change");
+    c.fillRoundRect(Rect{MARGIN, 447, 6, 6}, 3, dot);
+    gfx::drawText(c, fonts::kCondRegular14, MARGIN + 12, 456,
+                  gfx::fitText(fonts::kCondRegular14, text, SCREEN_W - 2 * MARGIN - 12 - hintW - 12), TEXT_MUTED);
+    gfx::drawTextIn(c, fonts::kCondRegular12, Rect{0, 0, SCREEN_W - MARGIN, 0}, 456, gfx::Align::Right,
+                    "Tap stop to change", TEXT_MUTED);
+}
+
+}  // namespace
+
+void drawMainScreen(gfx::Canvas &c, const StopBoard &board, time_t now) {
+    c.clear(BG);
+
+    // Clock and data age: the board's own fetch time, so a snapshot is repeatable
+    const time_t clockT = board.fetchedAt ? board.fetchedAt : now;
+    std::tm *t = std::localtime(&clockT);
+    char clockText[8];
+    std::snprintf(clockText, sizeof clockText, "%02d:%02d", t->tm_hour, t->tm_min);
+
+    std::string kicker = g_dirChoice == DirectionChoice::IntoCity ? "INTO CITY"
+                       : g_dirChoice == DirectionChoice::OutOfCity ? "OUT OF CITY"
+                       : board.indicator;
+    gfx::HeaderText header;
+    header.title = board.stopName.empty() ? "Bus stop" : board.stopName;
+    header.right = clockText;
+    header.kicker = kicker;
+    gfx::drawHeader(c, header);
+
+    if (!board.notices.empty()) drawNotice(c, board);
+    const int rowsTop = board.notices.empty() ? kRowsTopNoNotice : kRowsTopNotice;
+    const int rowsBottom = FOOTER_Y;
+
+    const bool stale = board.fetchedAt && now - board.fetchedAt >= STALE_DEAD_S &&
+                       (board.status == BoardStatus::Ok || board.status == BoardStatus::NoDepartures);
+
+    std::vector<const Departure *> rows;
+    for (const auto &d : board.departures)
+        if (d.hasMinutes) rows.push_back(&d);
+
+    if (rows.empty()) {
+        if (board.status == BoardStatus::Loading) {
+            drawCentredBlock(c, rowsTop, rowsBottom, "Loading...", TEXT_MUTED, "");
+        } else if (board.status == BoardStatus::NetworkError) {
+            drawCentredBlock(c, rowsTop, rowsBottom, "Can't reach Lothian", ERROR, "Check the connection");
+        } else if (board.status == BoardStatus::KeyRejected) {
+            drawCentredBlock(c, rowsTop, rowsBottom, "API key rejected", ERROR, "Check BUSTRACKER_KEY");
+        } else if (board.status == BoardStatus::RateLimited) {
+            drawCentredBlock(c, rowsTop, rowsBottom, "Too many requests", ERROR, "Trying again soon");
         } else {
-            char minutesNumStr[12];
-            snprintf(minutesNumStr, sizeof(minutesNumStr), "%d", minutesUntilBus);
-            Paint_DrawString_EN(TIME_X, yPos + 10, minutesNumStr, &Font48, WHITE, WHITE);
-            int numWidth = strlen(minutesNumStr) * Font48.Width;
-            Paint_DrawString_EN(TIME_X + numWidth + 2, yPos + 35, "min", &Font24, WHITE, WHITE);
+            drawCentredBlock(c, rowsTop, rowsBottom, "No buses in the next hour", TEXT_MUTED, "");
         }
-
-        yPos += 50;
-        Paint_DrawString_EN(MARGIN, yPos, "------------------", &Font24, WHITE, WHITE);
-        yPos += 20;
-        busCount++;
+    } else {
+        const int slots = (rowsBottom - rowsTop) / ROW_H;
+        const int count = std::min(slots, static_cast<int>(rows.size()));
+        for (int i = 0; i < count; ++i)
+            drawRow(c, rowsTop + i * ROW_H, *rows[i], stale);
     }
-    // The caller pushes the frame (flushToLcd) or writes it to a PNG.
+    drawFooter(c, board, now);
 }

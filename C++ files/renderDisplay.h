@@ -4,6 +4,7 @@ extern "C" {
 #include "../C/lib/GUI/GUI_Paint.h"
 }
 
+#include <ctime>
 #include <string>
 #include <vector>
 
@@ -34,7 +35,8 @@ extern std::string g_selectedStopID;
 void flushToLcd(const gfx::Canvas &frame);
 void drawDirectionChoiceModal();
 
-// Draw the main departures screen into the Paint buffer. Draws only; the
-// caller decides when to push it to the LCD (flushToLcd) or write a PNG.
-// The clock comes from board.fetchedAt, so snapshots are repeatable.
-void drawMainScreen(UWORD *image, const StopBoard &board);
+// Draw the main departures screen into the frame. Draws only; the caller decides
+// when to push it to the LCD (flushToLcd) or write a PNG. The clock and the data
+// age come from board.fetchedAt, and `now` is the reference for "how old is it",
+// so snapshots are repeatable when --now is given.
+void drawMainScreen(gfx::Canvas &frame, const StopBoard &board, time_t now);

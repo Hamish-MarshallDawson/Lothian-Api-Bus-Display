@@ -28,6 +28,7 @@
 #include "openmappull.h"    // getNearestStops, getNearestStopsGrouped
 #include "png_write.h"
 #include "renderDisplay.h"  // drawMainScreen, flushToLcd, shared UI state
+#include "../gfx/theme.h"   // HEADER_H
 #include "settings.h"
 
 extern "C" {
@@ -65,6 +66,7 @@ struct Options {
     std::string screen = "main";// --screen
     std::string fetchStop;      // --fetch
     time_t now = 0;             // --now (0 = real clock)
+    int ageSecs = 0;            // --age: render as if the data is this many seconds old
 };
 
 static bool parseOptions(int argc, char **argv, Options &o) {
@@ -75,6 +77,7 @@ static bool parseOptions(int argc, char **argv, Options &o) {
         else if (arg == "--fixture" && hasNext) o.fixturePath = argv[++i];
         else if (arg == "--screen" && hasNext) o.screen = argv[++i];
         else if (arg == "--fetch" && hasNext) o.fetchStop = argv[++i];
+        else if (arg == "--age" && hasNext) o.ageSecs = std::atoi(argv[++i]);
         else if (arg == "--now" && hasNext) {
             std::tm tm{};
             std::istringstream in(argv[++i]);
@@ -168,7 +171,8 @@ static int runSnapshot(const Options &o) {
     Paint_Clear(BLACK);
     gfx::Canvas frame(buffer, w, h);
 
-    drawMainScreen(buffer, board);
+    // --age shows the same board as if it were that many seconds old (stale states)
+    drawMainScreen(frame, board, board.fetchedAt + o.ageSecs);
 
     bool ok = writePngRGB565(o.snapshotPath, frame.data(), w, h);
     free(buffer);
@@ -308,7 +312,7 @@ static int runDisplay() {
                 std::cerr << "Board status: " << boardStatusName(board.status)
                           << " " << board.statusDetail << std::endl;
             }
-            drawMainScreen(BlackImage, board);
+            drawMainScreen(frame, board, time(nullptr));
             flushToLcd(frame);
         }
 
@@ -368,7 +372,7 @@ static int runDisplay() {
                 std::cout << "Touch detected at (" << touchX << ", " << touchY << ")" << std::endl;
 
                 // Tap the top area: open the dropdown + direction modal
-                if (touchY < 50) {
+                if (touchY < theme::HEADER_H) {  // the header band opens the picker
                     std::cout << "Dropdown touched" << std::endl;
                     g_showDirectionModal = true;
                     g_dirChoice = DirectionChoice::None;
