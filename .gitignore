@@ -14,8 +14,6 @@ bin/
 obj/
 
 # Personal and secret config (never commit keys or the home address)
-config.h
-busStopInfo.cpp
 busStopInfo.txt
 busStopInfo.local
 config/*.txt

@@ -47,7 +47,13 @@ struct StopBoard {
 StopBoard boardFromStopEvents(const nlohmann::json &stopObj, time_t now);
 
 // Call StopEvents for one stop and map every failure to a board status.
+// Works for any atcocode.
 StopBoard fetchStopBoard(const std::string &atcocode, time_t now);
+
+// Call MultipleStopEvents for several stops in one request. The result has one
+// board per requested code, in the same order. A request-level failure sets
+// the same error status on every board.
+std::vector<StopBoard> fetchStopBoards(const std::vector<std::string> &atcocodes, time_t now);
 
 // Name of a status for logs, e.g. "key rejected".
 const char *boardStatusName(BoardStatus s);

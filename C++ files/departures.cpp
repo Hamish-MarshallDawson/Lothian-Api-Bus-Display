@@ -1,5 +1,5 @@
 // departures.cpp
-// Turns Novus StopEvents JSON into StopBoard, and fetches one stop's board.
+// Turns Novus StopEvents JSON into StopBoard, and fetches boards from the API.
 
 #include "departures.h"
 
@@ -112,55 +112,114 @@ StopBoard boardFromStopEvents(const json &stopObj, time_t now) {
     return b;
 }
 
+// GET a StopEvents-style URL and parse the array. On failure, sets the status
+// and detail to report and returns false.
+static bool getStopEventsJson(const std::string &url, json &doc, BoardStatus &failStatus,
+                              std::string &detail) {
+    if (API_KEY().empty()) {
+        failStatus = BoardStatus::KeyRejected;
+        detail = "BUSTRACKER_KEY is not set";
+        return false;
+    }
+    std::string body;
+    long code = 0;
+    if (!apiHttpGet(url, body, code)) {
+        if (code == 401 || code == 403) {
+            failStatus = BoardStatus::KeyRejected;
+            detail = "HTTP " + std::to_string(code);
+        } else if (code == 429) {
+            failStatus = BoardStatus::RateLimited;
+            detail = "HTTP 429";
+        } else {
+            failStatus = BoardStatus::NetworkError;
+            detail = code ? "HTTP " + std::to_string(code) : "no response";
+        }
+        return false;
+    }
+    try {
+        doc = json::parse(body);
+    } catch (const json::exception &e) {
+        failStatus = BoardStatus::NetworkError;
+        detail = std::string("bad JSON: ") + e.what();
+        return false;
+    }
+    if (!doc.is_array()) {
+        failStatus = BoardStatus::NetworkError;
+        detail = "response is not an array";
+        return false;
+    }
+    return true;
+}
+
+static std::string eventsQuery(const std::string &codesParam) {
+    return "?" + codesParam
+         + "&eventType=departure&ordering=RealDep&timeFormat=Local&doCountdown=true"
+         + "&lookahead=" + std::to_string(CONFIG_LOOKAHEAD_MINS())
+         + "&maxEvents=" + std::to_string(CONFIG_MAX_EVENTS());
+}
+
 StopBoard fetchStopBoard(const std::string &atcocode, time_t now) {
     StopBoard b;
     b.atcocode = atcocode;
     b.fetchedAt = now;
 
-    if (API_KEY().empty()) {
-        b.status = BoardStatus::KeyRejected;
-        b.statusDetail = "BUSTRACKER_KEY is not set";
-        return b;
-    }
-
-    std::string url = API_BASE() + "/stops/StopEvents?atcoCode=" + atcocode
-                    + "&eventType=departure&ordering=RealDep&timeFormat=Local&doCountdown=true"
-                    + "&lookahead=" + std::to_string(CONFIG_LOOKAHEAD_MINS())
-                    + "&maxEvents=" + std::to_string(CONFIG_MAX_EVENTS());
-
-    std::string body;
-    long code = 0;
-    if (!apiHttpGet(url, body, code)) {
-        if (code == 401 || code == 403) {
-            b.status = BoardStatus::KeyRejected;
-            b.statusDetail = "HTTP " + std::to_string(code);
-        } else if (code == 429) {
-            b.status = BoardStatus::RateLimited;
-            b.statusDetail = "HTTP 429";
-        } else {
-            b.status = BoardStatus::NetworkError;
-            b.statusDetail = code ? "HTTP " + std::to_string(code) : "no response";
-        }
-        return b;
-    }
-
     json doc;
-    try {
-        doc = json::parse(body);
-    } catch (const json::exception &e) {
-        b.status = BoardStatus::NetworkError;
-        b.statusDetail = std::string("bad JSON: ") + e.what();
+    if (!getStopEventsJson(API_BASE() + "/stops/StopEvents" + eventsQuery("atcoCode=" + atcocode),
+                           doc, b.status, b.statusDetail)) {
         return b;
     }
-    if (!doc.is_array() || doc.empty() || !doc[0].is_object()) {
+    if (doc.empty() || !doc[0].is_object()) {
         b.status = BoardStatus::NoDepartures;
         b.statusDetail = "empty response";
         return b;
     }
-
     StopBoard parsed = boardFromStopEvents(doc[0], now);
     if (parsed.atcocode.empty()) parsed.atcocode = atcocode;
     return parsed;
+}
+
+std::vector<StopBoard> fetchStopBoards(const std::vector<std::string> &atcocodes, time_t now) {
+    std::vector<StopBoard> out(atcocodes.size());
+    for (size_t i = 0; i < atcocodes.size(); ++i) {
+        out[i].atcocode = atcocodes[i];
+        out[i].fetchedAt = now;
+    }
+    if (atcocodes.empty()) return out;
+
+    std::string codes;
+    for (size_t i = 0; i < atcocodes.size(); ++i) {
+        if (i) codes += ",";
+        codes += atcocodes[i];
+    }
+
+    json doc;
+    BoardStatus failStatus = BoardStatus::NetworkError;
+    std::string detail;
+    if (!getStopEventsJson(API_BASE() + "/stops/MultipleStopEvents" + eventsQuery("atcoCodes=" + codes),
+                           doc, failStatus, detail)) {
+        for (auto &b : out) {
+            b.status = failStatus;
+            b.statusDetail = detail;
+        }
+        return out;
+    }
+
+    // Match each returned stop to the code we asked for
+    for (size_t i = 0; i < atcocodes.size(); ++i) {
+        const json *found = nullptr;
+        for (const auto &s : doc) {
+            if (s.is_object() && jstr(s, "atcocode") == atcocodes[i]) { found = &s; break; }
+        }
+        if (!found) {
+            out[i].status = BoardStatus::NoDepartures;
+            out[i].statusDetail = "not in response";
+            continue;
+        }
+        StopBoard parsed = boardFromStopEvents(*found, now);
+        if (parsed.atcocode.empty()) parsed.atcocode = atcocodes[i];
+        out[i] = parsed;
+    }
+    return out;
 }
 
 const char *boardStatusName(BoardStatus s) {

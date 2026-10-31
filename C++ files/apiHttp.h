@@ -40,6 +40,7 @@ inline bool apiHttpGet(const std::string &url, std::string &bodyOut, long &httpC
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, apiHttpWriteCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &bodyOut);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, USER_AGENT().c_str());
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
 
