@@ -34,10 +34,15 @@ struct BusDetailView {
     bool stuck = false;
     long stuckForS = 0;
     std::string originName, originTime;  // NotStarted: where and when it leaves
+    std::string lateTrend;             // "late 4 -> 6 min over 3 min", from the lateness history ("" if none)
 };
 
 // Draw the whole screen: status bar, header with back, map panel, info block, next stops.
 // The map uses tiles when they are on disk and the plain background when they are not.
+// The map for the detail: the trip's stops, the bus and the route, fitted to the panel. busTrack
+// asks for its tiles; drawBusDetail draws the same scene.
+gfx::MapScene detailMapScene(const BusDetailView &v);
+
 void drawBusDetail(gfx::Canvas &c, const BusDetailView &v, const gfx::StatusBarText &status,
                    gfx::TileStore &tiles);
 

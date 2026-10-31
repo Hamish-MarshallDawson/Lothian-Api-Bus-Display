@@ -30,13 +30,17 @@ struct Tile {
     std::vector<Color> px;  // kSize * kSize, row-major
 };
 
-// Tiles on disk, laid out as <dir>/<z>/<x>/<y>.png (the layout the backend's downloader writes).
+// Tiles on disk, laid out as <dir>/tiles/<z>-<x>-<y>.png: the layout the backend's tile
+// cache writes (tiles.cpp), under ~/.cache/bustracker. dir is that cache folder.
 class TileStore {
 public:
     explicit TileStore(std::string dir);
     // The decoded tile, or nullptr when it is not on disk. Decodes once and keeps the result;
     // a missing or unreadable file is remembered too, so a frame never reads the disk twice.
     const Tile *get(int z, int x, int y);
+    // Drop the remembered result for one tile, so the next get() reads the disk again
+    // (call after the tile has been fetched).
+    void forget(int z, int x, int y);
     static std::string tilePath(const std::string &dir, int z, int x, int y);
 
 private:
@@ -65,6 +69,15 @@ struct MapScene {
     std::vector<MapPath> paths;
     std::vector<MapMarker> markers;
 };
+
+// A tile by its address, as TileStore wants it
+struct TileRef {
+    int z, x, y;
+};
+
+// The tiles that cover the scene's panel, the ones drawMap looks for, with x wrapped
+// round the world. The caller fetches the missing ones, one at a time.
+std::vector<TileRef> sceneTiles(const MapScene &scene);
 
 // Pick the centre and the largest zoom (within minZoom..maxZoom) at which every point fits
 // inside the rect with padPx spare on each side.
