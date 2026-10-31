@@ -3,14 +3,18 @@
  *
  * Modes:
  *   busTrack                                  run the display (needs the BUSTRACKER_HW build)
- *   busTrack --snapshot out.png [--fixture f.json] [--now YYYY-MM-DDTHH:MM:SS] [--screen main]
- *                                             render one frame to a PNG; no GPIO/SPI/touch
+ *   busTrack --snapshot out.png [--fixture f.json] [--now YYYY-MM-DDTHH:MM:SS]
+ *            [--age SECS] [--screen NAME]     render one frame to a PNG; no GPIO/SPI/touch
+ *                                             NAME: main boot loading direction stop-list
+ *                                                   error-no-wifi error-key error-rate
+ *                                                   error-no-stops empty asleep
  *   busTrack --fetch <atcocode>               print one stop's board from the live API
  *   busTrack --fixture f.json [--now ...]     print what a fixture parses to
  *
  * The display build is used only when wiringPi is installed (see Makefile).
  */
 
+#include <algorithm>
 #include <cstdlib>
 #include <ctime>
 #include <fstream>
@@ -27,13 +31,12 @@
 #include "departures.h"
 #include "openmappull.h"    // getNearestStops, getNearestStopsGrouped
 #include "png_write.h"
-#include "renderDisplay.h"  // drawMainScreen, flushToLcd, shared UI state
-#include "../gfx/theme.h"   // HEADER_H
+#include "refresh.h"        // BoardRefresher: fetch policy and last good data
+#include "renderDisplay.h"  // drawMainScreen, flushToLcd
+#include "screens.h"        // screen state, touch areas, transitions
+#include "screens_draw.h"   // drawing for every screen but the board
 #include "settings.h"
-
-extern "C" {
-    #include "../C/lib/GUI/GUI_Paint.h"
-}
+#include "../gfx/canvas.h"
 
 #ifdef BUSTRACKER_HW
 extern "C" {
@@ -41,6 +44,7 @@ extern "C" {
     #include "../C/lib/lcd/st7796.h"
     #include "../C/lib/lcd/ft6336u.h"
 }
+#include <chrono>
 #include <wiringPi.h>
 
 const int BACKLIGHT_PIN = 18; // BCM 18 from ComponentsUsed.txt
@@ -139,48 +143,103 @@ static bool loadFixtureBoard(const std::string &path, time_t now, StopBoard &out
 }
 
 // ---------------------------------------------------------------------------
+// Drawing: one entry point for every screen, used by the display loop and by
+// snapshot mode, so the PNG is the frame the LCD gets. Frames are drawn as the
+// person sees them; flushToLcd does the panel's flip.
+
+// Sample stops for the picker in snapshot mode (no network needed).
+static const std::vector<std::string> kSampleStopNames = {
+    "Princes Street", "Lothian Road", "Haymarket Station", "George Street",
+    "North Bridge", "Morrison Street", "Tollcross"};
+
+// Seconds since the board's data was fetched, or -1 if there is none. The error
+// screen shows it when it is recent.
+static long staleAgeSecs(const StopBoard &board, time_t now) {
+    return board.fetchedAt > 0 ? static_cast<long>(now - board.fetchedAt) : -1;
+}
+
+static void drawFrame(gfx::Canvas &frame, Screen screen, StopDirection dir, ErrorReason reason,
+                      const StopBoard &board, const std::vector<std::string> &names,
+                      time_t now, long staleSecs, int retrySecs) {
+    switch (screen) {
+    case Screen::Board:     drawMainScreen(frame, board, now); break;
+    case Screen::Boot:      drawBootScreen(frame, "Finding stops..."); break;
+    case Screen::Loading:   drawLoadingScreen(frame, "Finding stops..."); break;
+    case Screen::Direction: drawDirectionScreen(frame); break;
+    case Screen::StopList:
+        drawStopListScreen(frame, dir == StopDirection::Into ? "Into city" : "Out of city", names);
+        break;
+    case Screen::Error:     drawErrorScreen(frame, reason, retrySecs, staleSecs); break;
+    case Screen::Empty:     drawEmptyScreen(frame, board.stopName); break;
+    case Screen::Asleep:    drawAsleepScreen(frame); break;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Snapshot mode
+
+static bool parseScreenName(const std::string &name, Screen &screen, ErrorReason &reason) {
+    reason = ErrorReason::None;
+    if      (name == "main")            screen = Screen::Board;
+    else if (name == "boot")            screen = Screen::Boot;
+    else if (name == "loading")         screen = Screen::Loading;
+    else if (name == "direction")       screen = Screen::Direction;
+    else if (name == "stop-list")       screen = Screen::StopList;
+    else if (name == "empty")           screen = Screen::Empty;
+    else if (name == "asleep")          screen = Screen::Asleep;
+    else if (name == "error-no-wifi")   { screen = Screen::Error; reason = ErrorReason::NoNetwork; }
+    else if (name == "error-key")       { screen = Screen::Error; reason = ErrorReason::KeyRejected; }
+    else if (name == "error-rate")      { screen = Screen::Error; reason = ErrorReason::RateLimited; }
+    else if (name == "error-no-stops")  { screen = Screen::Error; reason = ErrorReason::NoStops; }
+    else return false;
+    return true;
+}
 
 static int runSnapshot(const Options &o) {
     const time_t now = o.now ? o.now : time(nullptr);
 
-    StopBoard board;
-    if (!o.fixturePath.empty()) {
-        if (!loadFixtureBoard(o.fixturePath, now, board)) return 2;
-    } else {
-        std::vector<BusStopInfo> nearest;
-        if (!getNearestStops(CONFIG_ADDRESS(), 1, nearest) || nearest.empty()) {
-            std::cerr << "Snapshot: no fixture and no nearest stop (is BUS_ADDRESS set?)\n";
-            return 3;
-        }
-        board = fetchStopBoard(nearest.front().stopID, now);
-        if (board.stopName.empty()) board.stopName = nearest.front().stopName;
-    }
-
-    if (o.screen != "main") {
-        std::cerr << "Unknown --screen '" << o.screen << "'. Known screens: main\n";
+    Screen screen;
+    ErrorReason reason;
+    if (!parseScreenName(o.screen, screen, reason)) {
+        std::cerr << "Unknown --screen '" << o.screen << "'. Known screens: main boot loading "
+                  << "direction stop-list error-no-wifi error-key error-rate error-no-stops "
+                  << "empty asleep\n";
         return 2;
     }
 
-    // The frame as the person sees it. The PNG is that frame, unflipped; the LCD
-    // flush is the only place that flips it for the panel.
+    // Only the board needs data. The other screens draw fixed content.
+    StopBoard board;
+    if (screen == Screen::Board || screen == Screen::Empty) {
+        if (!o.fixturePath.empty()) {
+            if (!loadFixtureBoard(o.fixturePath, now, board)) return 2;
+        } else {
+            std::vector<BusStopInfo> nearest;
+            if (!getNearestStops(CONFIG_ADDRESS(), 1, nearest) || nearest.empty()) {
+                std::cerr << "Snapshot: no fixture and no nearest stop (is BUS_ADDRESS set?)\n";
+                return 3;
+            }
+            board = fetchStopBoard(nearest.front().stopID, now);
+            if (board.stopName.empty()) board.stopName = nearest.front().stopName;
+        }
+    }
+
+    // --age shows the same board as if its data were that many seconds old
+    const time_t frameNow = board.fetchedAt > 0 ? board.fetchedAt + o.ageSecs : now;
+    const long staleSecs = o.ageSecs > 0 ? o.ageSecs : -1;
+
     const int w = ST7796_WIDTH, h = ST7796_HEIGHT;
     UWORD *buffer = static_cast<UWORD *>(malloc(sizeof(UWORD) * w * h));
     if (!buffer) { std::cerr << "Out of memory\n"; return 1; }
-    Paint_NewImage(buffer, w, h, 0, BLACK, 16);
-    Paint_Clear(BLACK);
     gfx::Canvas frame(buffer, w, h);
 
-    // --age shows the same board as if it were that many seconds old (stale states)
-    drawMainScreen(frame, board, board.fetchedAt + o.ageSecs);
+    drawFrame(frame, screen, StopDirection::Into, reason, board, kSampleStopNames,
+              frameNow, staleSecs, 42);
 
     bool ok = writePngRGB565(o.snapshotPath, frame.data(), w, h);
     free(buffer);
     if (!ok) { std::cerr << "Could not write " << o.snapshotPath << "\n"; return 1; }
 
-    std::cout << "Wrote " << o.snapshotPath << " (" << board.stopName
-              << ", " << board.departures.size() << " departures, status "
-              << boardStatusName(board.status) << ")\n";
+    std::cout << "Wrote " << o.snapshotPath << " (screen " << o.screen << ")\n";
     return 0;
 }
 
@@ -221,39 +280,30 @@ static int runFixtureDump(const Options &o) {
 
 #ifdef BUSTRACKER_HW
 
+// Monotonic milliseconds, for tap timing and the idle timer.
+static long nowMs() {
+    using namespace std::chrono;
+    return static_cast<long>(duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
+}
+
+// Seconds until the next minute boundary (1..60): when the clock on screen changes.
+static int secondsToNextMinute() {
+    time_t t = time(nullptr);
+    int s = 60 - std::localtime(&t)->tm_sec;
+    return s <= 0 ? 60 : s;
+}
+
 static int runDisplay() {
     std::cout << "Lothian Bus Display Starting" << std::endl;
 
-    std::string address = CONFIG_ADDRESS();
-    int wanted = CONFIG_NUM_STOPS();
+    const std::string address = CONFIG_ADDRESS();
+    const int perGroup = CONFIG_NUM_STOPS();
     if (address.empty()) {
         std::cerr << "BUS_ADDRESS is not set; nothing to show\n";
         return 1;
     }
 
-    std::vector<BusStopInfo> busStops;
-    if (!getNearestStops(address, wanted, busStops) || busStops.empty()) {
-        std::cerr << "Could not find stops near " << address << "\n";
-        return 1;
-    }
-
-    // Index of current stop shown on screen: nearest stop at startup
-    int currentBusStopIndex = 0;
-    {
-        std::vector<BusStopInfo> nearest;
-        if (getNearestStops(address, 1, nearest) && !nearest.empty()) {
-            g_selectedStopID = nearest.front().stopID;
-            for (size_t i = 0; i < busStops.size(); ++i) {
-                if (busStops[i].stopID == g_selectedStopID) {
-                    currentBusStopIndex = i;
-                    break;
-                }
-            }
-        }
-    }
-
-    // Start display
-    if(DEV_ModuleInit() != 0) {
+    if (DEV_ModuleInit() != 0) {
         std::cerr << "Failed to initialize display" << std::endl;
         return 1;
     }
@@ -262,231 +312,153 @@ static int runDisplay() {
     st7796_clear(BLACK);
     ft6336u_init();
 
-    // Prefetch grouped stops so the first dropdown interaction is fast
-    {
-        int perGroup = CONFIG_NUM_STOPS();
-        GroupedStops pre;
-        std::cerr << "Prefetching grouped stops (perGroup=" << perGroup << ")..." << std::endl;
-        if (getNearestStopsGrouped(address, perGroup, pre)) {
-            g_groupedStops = pre;
-        } else {
-            std::cerr << "Prefetch failed or network unavailable; will fetch on demand." << std::endl;
-        }
-    }
-
-    touch_data_t touch_data;
-
-    // Paint buffer for the whole screen
-    UWORD *BlackImage;
-    uint32_t Imagesize = ((uint32_t)ST7796_WIDTH) * ((uint32_t)ST7796_HEIGHT);
-    if((BlackImage = (UWORD *)malloc(Imagesize * sizeof(UWORD))) == NULL) {
-        std::cerr << "Failed to allocate memory for image buffer" << std::endl;
+    UWORD *buffer = static_cast<UWORD *>(malloc(sizeof(UWORD) * ST7796_WIDTH * ST7796_HEIGHT));
+    if (!buffer) {
+        std::cerr << "Failed to allocate memory for the frame" << std::endl;
         DEV_ModuleExit();
         return 1;
     }
-    Paint_NewImage(BlackImage, ST7796_WIDTH, ST7796_HEIGHT, 0, BLACK, 16);
-    Paint_Clear(BLACK);
-    gfx::Canvas frame(BlackImage, ST7796_WIDTH, ST7796_HEIGHT);
+    gfx::Canvas frame(buffer, ST7796_WIDTH, ST7796_HEIGHT);
 
-    // Welcome message
-    Paint_DrawString_EN(70, 200, "Bus Tracker", &Font24, WHITE, WHITE);
-    Paint_DrawString_EN(70, 230, "Starting...", &Font20, WHITE, WHITE);
-    flushToLcd(frame);
-    DEV_Delay_ms(1000);
+    // What the state machine is driving, and the work it asks for
+    UiState ui;
+    StopBoard board;                         // the board on screen, from the refresher
+    BusStopInfo boardStop;                   // the stop on the board
+    std::string refreshedStopId;             // the stop the refresher is fetching
+    std::vector<BusStopInfo> pick;           // stops for the direction being picked
+    BoardRefresher refresher;                // fetch policy, backoff, last good data
+    touch_data_t touch;
+    TapTracker taps;
+    long lastTouchMs = nowMs();
 
-    //decides whether to show dropdown menu
-    bool showDropDownMenu = false;
-    int autoTurnOff = 0;  // Track idle time across loop iterations
+    // Copy the refresher's board for the stop on screen; the name comes from the stop list.
+    auto takeBoard = [&]() {
+        board = refresher.board(0);
+        board.stopName = boardStop.stopName;
+    };
 
-    // Main loop
-    while(true) {
+    auto flush = [&]() {
+        std::vector<std::string> names;
+        for (const auto &s : pick) names.push_back(s.stopName);
+        const time_t now = time(nullptr);
+        drawFrame(frame, ui.screen, ui.dir, ui.reason, board, names, now,
+                  staleAgeSecs(board, now), secondsToNextMinute());
+        flushToLcd(frame);
+    };
 
-        if(!showDropDownMenu) {
-            const BusStopInfo &stop = busStops[currentBusStopIndex];
-            std::cout << "\n=== Fetching bus data for stop: " << stop.stopName
-                      << " (ID: " << stop.stopID << ") ===" << std::endl;
-
-            StopBoard board = fetchStopBoard(stop.stopID, time(nullptr));
-            if (board.stopName.empty()) board.stopName = stop.stopName;
-            if (board.status != BoardStatus::Ok && board.status != BoardStatus::NoDepartures) {
-                std::cerr << "Board status: " << boardStatusName(board.status)
-                          << " " << board.statusDetail << std::endl;
-            }
-            drawMainScreen(frame, board, time(nullptr));
-            flushToLcd(frame);
-        }
-
-        // If menu should be shown, draw it on top
-        if(showDropDownMenu) {
-            Paint_Clear(GRAY);
-
-            // Compute how many rows fit on screen (start Y=50, row height=50)
-            const int rowY0 = 50;
-            const int rowH = 50;
-            size_t maxRows = busStops.size();
-            if (ST7796_HEIGHT > rowY0) {
-                size_t fit = (ST7796_HEIGHT - rowY0) / rowH;
-                if (fit < maxRows) maxRows = fit;
-            } else {
-                maxRows = 0;
-            }
-
-            if (g_showDirectionModal) {
-                drawDirectionChoiceModal();
-                flushToLcd(frame);
-            } else {
-                bool usingGrouped = !g_dropdownStops.empty();
-                size_t sourceSize = usingGrouped ? g_dropdownStops.size() : busStops.size();
-                size_t rowsToDraw = std::min(maxRows, sourceSize);
-
-                if (rowsToDraw == 0) {
-                    Paint_DrawString_EN(20, rowY0 + 4, "No stops found", &Font16, RED, GRAY);
+    // Carry out the work an effect asks for; each result feeds back into the state machine.
+    auto perform = [&](Effect e) {
+        while (e.kind != Effect::None && e.kind != Effect::Sleep) {
+            switch (e.kind) {
+            case Effect::FetchBoard:
+                // A user-asked fetch: fetch now. Same stop keeps its last good data;
+                // a different stop starts fresh.
+                if (refreshedStopId == boardStop.stopID) {
+                    refresher.refreshNow();
                 } else {
-                    for(size_t i = 0; i < rowsToDraw; i++) {
-                        int itemY = rowY0 + (i * rowH);
-                        const std::string &name = usingGrouped ? g_dropdownStops[i].stopName : busStops[i].stopName;
-
-                        UWORD bgColor = (static_cast<size_t>(currentBusStopIndex) == i && !usingGrouped) ? BLUE : WHITE;
-                        Paint_DrawString_EN(20, itemY + 12, name.c_str(), &Font16, BLACK, bgColor);
-                    }
+                    refresher.setStops({boardStop.stopID});
+                    refreshedStopId = boardStop.stopID;
                 }
-                flushToLcd(frame);
+                refresher.update(time(nullptr));
+                takeBoard();
+                e = onBoard(ui, board.status);
+                break;
+            case Effect::Lookup:
+                if (e.dir == StopDirection::None) {          // startup, or retry after no stops
+                    std::vector<BusStopInfo> nearest;
+                    bool ok = getNearestStops(address, 1, nearest) && !nearest.empty();
+                    if (ok) boardStop = nearest.front();
+                    e = onBoot(ui, ok, ok ? 1 : 0);
+                } else {
+                    GroupedStops g;
+                    bool ok = getNearestStopsGrouped(address, perGroup, g);
+                    if (ok) pick = e.dir == StopDirection::Into ? g.intoCity : g.outOfCity;
+                    else pick.clear();
+                    e = onLookup(ui, ok, static_cast<int>(pick.size()));
+                }
+                break;
+            case Effect::ShowStop:
+                boardStop = pick[e.index];
+                e = Effect(Effect::FetchBoard);
+                break;
+            default:
+                e = Effect();
+                break;
             }
         }
+    };
 
-        // Wait until the next minute boundary, checking for touch input
-        time_t now = time(nullptr);
-        std::tm* timeinfo = localtime(&now);
-        int secondsIntoMinute = timeinfo->tm_sec;
-        int secondsToWait = (60 - secondsIntoMinute);
-        if (secondsToWait <= 0) secondsToWait = 60;
-        int iterations = secondsToWait * 10;  // 10 iterations per second (100ms each)
-        std::cout << "Waiting " << secondsToWait << " seconds until next refresh" << std::endl;
+    // The regular poll: the refresher fetches when one is due. Returns true if it fetched,
+    // so the caller redraws.
+    auto pollBoard = [&]() {
+        if (!refresher.update(time(nullptr))) return false;
+        takeBoard();
+        perform(onBoard(ui, board.status));
+        return true;
+    };
 
-        for(int i = 0; i < iterations && i < 600; i++) {  // Cap at 60 seconds max
+    // Splash while the nearest stop is looked up; onBoot then fetches the first board
+    drawBootScreen(frame, "Finding stops...");
+    flushToLcd(frame);
+    perform(Effect(Effect::Lookup, StopDirection::None));
 
-            if (get_touch_data(&touch_data)) {
-                int touchX = touch_data.coords[0].x;
-                int touchY = touch_data.coords[0].y;
+    while (true) {
+        flush();
 
-                std::cout << "Touch detected at (" << touchX << ", " << touchY << ")" << std::endl;
+        // Wait for the next minute, polling touch. Taps act at once; idle time is counted.
+        const long minuteEnd = nowMs() + secondsToNextMinute() * 1000L;
 
-                // Tap the top area: open the dropdown + direction modal
-                if (touchY < theme::HEADER_H) {  // the header band opens the picker
-                    std::cout << "Dropdown touched" << std::endl;
-                    g_showDirectionModal = true;
-                    g_dirChoice = DirectionChoice::None;
-                    g_groupedStops.intoCity.clear();
-                    g_groupedStops.outOfCity.clear();
-                    g_dropdownStops.clear();
-                    showDropDownMenu = true;
-                    autoTurnOff = 0;
-                    DEV_Delay_ms(15);
+        bool tapped = false;
+        while (nowMs() < minuteEnd && !tapped) {
+            if (pollBoard()) break;                 // fetched: redraw now
+            bool touching = get_touch_data(&touch);
+            Tap tap;
+            if (taps.update(touching, touch.coords[0].x, touch.coords[0].y, nowMs(), tap)) {
+                tapped = true;
+                lastTouchMs = nowMs();
+                int arg = -1;
+                Action action = hitTest(ui.screen, ui.stopCount, tap.x, tap.y, arg);
+                std::cout << "Tap at (" << tap.x << ", " << tap.y << "): action "
+                          << static_cast<int>(action) << std::endl;
+                if (action != Action::None) {
+                    Effect e = step(ui, action, arg);
+                    flush();                       // show "Finding stops..." before any network wait
+                    perform(e);
+                }
+                break;
+            }
+            DEV_Delay_ms(20);
+
+            // Five minutes with no touch on the board: sleep
+            if (nowMs() - lastTouchMs >= 300000L) {
+                Effect e = onIdle(ui);
+                if (e.kind == Effect::Sleep) {
+                    std::cout << "No activity, turning the display off." << std::endl;
+                    frame.clear(0);
+                    flushToLcd(frame);
+                    st7796_sleep();
+                    backlight_off();
+
+                    // Asleep: wait for one tap, which wakes the screen and is not acted on
+                    while (true) {
+                        Tap t;
+                        if (taps.update(get_touch_data(&touch), touch.coords[0].x, touch.coords[0].y, nowMs(), t)) break;
+                        DEV_Delay_ms(20);
+                    }
+                    st7796_wakeup();
+                    backlight_on();
+                    perform(step(ui, Action::Wake, 0));
+                    lastTouchMs = nowMs();
+                    tapped = true;                 // redraw straight away
                     break;
                 }
-
-                // Direction modal: handle taps on its buttons
-                if (g_showDirectionModal) {
-                    int x0 = 40, x1 = 280;
-                    int btn_x = x0 + 10;
-                    int btn_w = x1 - x0 - 20;
-                    const int into_y = 60;
-                    const int out_y = 300;
-                    const int btn_h = 36;
-
-                    if (touchX >= btn_x && touchX <= btn_x + btn_w && touchY >= into_y && touchY <= into_y + btn_h) {
-                        g_dirChoice = DirectionChoice::IntoCity;
-                    }
-                    else if (touchX >= btn_x && touchX <= btn_x + btn_w && touchY >= out_y && touchY <= out_y + btn_h) {
-                        g_dirChoice = DirectionChoice::OutOfCity;
-                    }
-
-                    if (g_dirChoice != DirectionChoice::None) {
-                        int perGroup = CONFIG_NUM_STOPS();
-                        bool ok = getNearestStopsGrouped(address, perGroup, g_groupedStops);
-                        if (!ok) {
-                            std::vector<BusStopInfo> fallback;
-                            if (getNearestStops(address, perGroup, fallback)) {
-                                g_dropdownStops = fallback;
-                            } else {
-                                g_dropdownStops.clear();
-                            }
-                            std::cerr << "getNearestStopsGrouped failed, using fallback size=" << g_dropdownStops.size() << std::endl;
-                        } else {
-                            if (g_dirChoice == DirectionChoice::IntoCity) g_dropdownStops = g_groupedStops.intoCity;
-                            else g_dropdownStops = g_groupedStops.outOfCity;
-                        }
-
-                        g_showDirectionModal = false;
-                        showDropDownMenu = true;
-                    }
-                }
-                // Dropdown visible: handle row selection
-                else if (showDropDownMenu && touchY >= 50) {
-                    int rowY0 = 50;
-                    int rowH = 50;
-                    int selectedIndex = (touchY - rowY0) / rowH;
-
-                    bool usingGrouped = !g_dropdownStops.empty();
-                    size_t sourceSize = usingGrouped ? g_dropdownStops.size() : busStops.size();
-
-                    if (selectedIndex >= 0 && static_cast<size_t>(selectedIndex) < sourceSize) {
-                        BusStopInfo chosen = usingGrouped ? g_dropdownStops[selectedIndex] : busStops[selectedIndex];
-                        g_selectedStopID = chosen.stopID;
-                        for (size_t i = 0; i < busStops.size(); ++i) {
-                            if (busStops[i].stopID == g_selectedStopID) {
-                                currentBusStopIndex = i;
-                                break;
-                            }
-                        }
-                        showDropDownMenu = false;
-                        g_dropdownStops.clear();
-                        autoTurnOff = 0;
-                    }
-                }
-
-                DEV_Delay_ms(5);
-
-                autoTurnOff = 0;  // Reset idle timer on any touch
-                break;  // Exit the wait loop and refresh immediately
-            }
-
-            DEV_Delay_ms(100);  // Check every 100ms
-
-            autoTurnOff++;
-            if(autoTurnOff >= 3000){ // After 5 minutes of idle (3000 * 100ms), turn off display
-                std::cout << "No activity detected, turning off display to save power." << std::endl;
-                std::cout << "Current time: " << std::put_time(timeinfo, "%H:%M:%S") << std::endl;
-                Paint_Clear(BLACK);
-                flushToLcd(frame);
-
-                st7796_sleep();
-                backlight_off();
-
-                // Wait for touch to turn back on
-                bool wokenUp = false;
-                while(!wokenUp){
-                    if (get_touch_data(&touch_data)) {
-                        std::cout << "Touch detected, turning display back on." << std::endl;
-                        time_t now = time(nullptr);
-                        std::tm* timeinfo = localtime(&now);
-                        std::cout << "Current time: " << std::put_time(timeinfo, "%H:%M:%S") << std::endl;
-                        DEV_Delay_ms(50);
-                        autoTurnOff = 0;
-                        wokenUp = true;
-                    }
-                    DEV_Delay_ms(100);
-                }
-                st7796_wakeup();
-                backlight_on();
-                flushToLcd(frame);
-                break;
+                lastTouchMs = nowMs();             // menus stay up; restart the count
             }
         }
     }
 
     // Not reached: the loop above runs until the process is stopped
-    free(BlackImage);
+    free(buffer);
     DEV_ModuleExit();
     return 0;
 }
