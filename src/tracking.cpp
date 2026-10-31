@@ -51,6 +51,23 @@ static std::string localHHMM(time_t t) {
 }
 
 // "HH:MM" to minutes since midnight; -1 if unreadable
+static int hhmmToMin(const std::string &s);
+
+// True when the trip's origin start time (its first stop's scheduled time) is still
+// ahead of "now" by less than 12 h. Unknown start times count as not ahead.
+static bool tripStartsAfter(const std::vector<TrackStop> &trip, time_t now) {
+    if (trip.empty()) return false;
+    const int start = hhmmToMin(trip.front().scheduled);
+    if (start < 0) return false;
+    std::tm tm{};
+    localtime_r(&now, &tm);
+    const double nowMin = tm.tm_hour * 60.0 + tm.tm_min + tm.tm_sec / 60.0;
+    double diff = start - nowMin;
+    if (diff < -720) diff += 1440;
+    if (diff > 720) diff -= 1440;
+    return diff > 0;
+}
+
 static int hhmmToMin(const std::string &s) {
     int h = 0, m = 0;
     if (std::sscanf(s.c_str(), "%d:%d", &h, &m) != 2) return -1;
@@ -197,8 +214,9 @@ BusTrack buildTrack(const Departure &dep, const BusStopInfo &myStop,
         if (!dep.journeyId.empty() && v.journeyId == dep.journeyId) { veh = &v; break; }
     }
     if (!veh) {
-        // Not on the road yet (or no feed): show the origin and its start time
-        t.state = TrackState::NotStarted;
+        // NotStarted only while the trip's start is still ahead. Once its start time
+        // has passed without a matching vehicle, there is no live position to show.
+        t.state = tripStartsAfter(trip, now) ? TrackState::NotStarted : TrackState::Unavailable;
         return t;
     }
 
