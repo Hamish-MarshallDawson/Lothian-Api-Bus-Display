@@ -1,12 +1,9 @@
 /*
- * Drawing for the bus display. The main board draws into a gfx::Canvas (see
- * .agents/DESIGN.md); the direction modal still uses GUI_Paint until lbd-ui-flows
- * moves the other screens.
+ * The main departures board, and the flush of any frame to the LCD. Everything
+ * draws into a gfx::Canvas (see .agents/DESIGN.md).
  */
 
 extern "C" {
-    #include "../C/lib/GUI/GUI_Paint.h"
-    #include "../C/lib/Fonts/fonts.h"
 #ifdef BUSTRACKER_HW
     #include "../C/lib/Config/DEV_Config.h"
     #include "../C/lib/lcd/st7796.h"
@@ -17,7 +14,6 @@ extern "C" {
 #include <algorithm>
 #include <cstdio>
 #include <ctime>
-#include <iostream>
 #include <string>
 #include <vector>
 
@@ -37,13 +33,6 @@ extern "C" {
 #include "../gfx/text.h"
 #include "../gfx/theme.h"
 #include "../gfx/widgets.h"
-
-// Define the shared UI globals (declared in renderDisplay.h)
-DirectionChoice g_dirChoice = DirectionChoice::None;
-GroupedStops g_groupedStops;
-std::vector<BusStopInfo> g_dropdownStops;
-bool g_showDirectionModal = false;
-std::string g_selectedStopID;
 
 // ---------------------------------------------------------------------------
 // Flush to the LCD
@@ -101,27 +90,6 @@ Color routeColour(const std::string &service) {
 Color fadeToBg(Color c, uint8_t amount) { return gfx::mix(c, BG, amount); }
 
 }  // namespace
-
-// ---------------------------------------------------------------------------
-// Direction modal (still GUI_Paint; busTrack draws it into the same buffer)
-
-void drawDirectionChoiceModal() {
-    // simple centered panel
-    int x0 = 40, x1 = 280;
-    // Use fixed Y positions so touch hitboxes are unambiguous
-    int btn_w = x1 - x0 - 20;
-    int btn_x = x0 + 10;
-    const int into_y = 60;   // top button Y
-    const int out_y = 300;   // bottom button Y
-    const int btn_h = 36;
-
-    Paint_DrawRectangle(btn_x, into_y, btn_x + btn_w, into_y + btn_h, BLACK, DOT_PIXEL_2X2, DRAW_FILL_EMPTY);
-    Paint_DrawRectangle(btn_x, out_y, btn_x + btn_w, out_y + btn_h, BLACK, DOT_PIXEL_2X2, DRAW_FILL_EMPTY);
-
-    Paint_DrawString_EN(btn_x + 12, into_y + 8, "Into city", &Font16, FONT_BACKGROUND, FONT_FOREGROUND);
-    Paint_DrawString_EN(btn_x + 12, out_y + 8, "Out of city", &Font16, FONT_BACKGROUND, FONT_FOREGROUND);
-    Paint_DrawString_EN(x0 + 10, into_y - 18, "Choose direction", &Font12, FONT_BACKGROUND, FONT_FOREGROUND);
-}
 
 // ---------------------------------------------------------------------------
 // Main board
@@ -268,13 +236,10 @@ void drawMainScreen(gfx::Canvas &c, const StopBoard &board, time_t now) {
     char clockText[8];
     std::snprintf(clockText, sizeof clockText, "%02d:%02d", t->tm_hour, t->tm_min);
 
-    std::string kicker = g_dirChoice == DirectionChoice::IntoCity ? "INTO CITY"
-                       : g_dirChoice == DirectionChoice::OutOfCity ? "OUT OF CITY"
-                       : board.indicator;
     gfx::HeaderText header;
     header.title = board.stopName.empty() ? "Bus stop" : board.stopName;
     header.right = clockText;
-    header.kicker = kicker;
+    header.kicker = board.indicator;  // direction labels live on the flows' own screens
     gfx::drawHeader(c, header);
 
     if (!board.notices.empty()) drawNotice(c, board);
