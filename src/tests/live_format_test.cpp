@@ -167,7 +167,22 @@ static void testLateRule() {
     }
 }
 
+// MultipleStopEvents with ONE code returns a single stop object (no "stops"
+// wrapper), the same shape as StopEvents. It must not read as "not in response".
+static void testMultipleWithOneCode() {
+    nlohmann::json doc = loadJson("fixtures/live-stopevents-northbridge.json");
+    CHECK(doc.is_array() && doc.size() == 1);
+    auto boards = boardsFromMultipleStopEvents(doc[0], {"6200208410"}, localTime(2026, 10, 31, 16, 0));
+    CHECK(boards.size() == 1);
+    if (boards.size() == 1) {
+        CHECK(boards[0].status == BoardStatus::Ok);
+        CHECK(boards[0].statusDetail != "not in response");
+        CHECK(boards[0].departures.size() == 1);
+    }
+}
+
 int main() {
+    testMultipleWithOneCode();
     testLateRule();
     testLiveStopEvents();
     testLiveMultipleStopEvents();
