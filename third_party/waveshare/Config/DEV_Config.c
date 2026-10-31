@@ -142,9 +142,9 @@ UBYTE DEV_ModuleInit(void)
     }
     DEV_GPIO_Init();
     wiringPiSPISetup(0,40000000);
-	pinMode (LCD_BL, PWM_OUTPUT);
-    pwmWrite(LCD_BL,512);
-	
+    // Backlight stays a plain on/off output (DEV_GPIO_Init turns it on). PWM needs root
+    // (/dev/mem), and the app only switches it on and off, so it can run as a normal user.
+
 #endif
     DEV_I2C_Init(0x38);
     return 0;
