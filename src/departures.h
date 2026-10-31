@@ -21,6 +21,10 @@ struct Departure {
     int lateMin = 0;          // live minus scheduled, whole minutes; 0 with no live time
     int seatCount = -1;       // -1 when the API did not say
     std::string seatLevel;    // "None", "Low", "Medium", "High" or "" if unknown
+    // Journey identity, for matching to a live vehicle (vehicle.journeyid == journeyId)
+    std::string journeyId;    // journey.id, e.g. "2402_5341"; "" if absent
+    std::string journeyStart; // journey.start, ISO date-time with offset; "" if absent
+    std::string operatorCode; // operator, e.g. "LOTH"; "" if absent
 };
 
 enum class BoardStatus {
