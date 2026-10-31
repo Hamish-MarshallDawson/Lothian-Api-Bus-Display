@@ -138,7 +138,6 @@ docs/                      hardware, wiring, screenshots
 
 ## Known issues
 
-- Wake-on-touch and the stale-time behaviour from the first version have been rewritten, but they have not been checked on the real screen.
 - The screenshots are rendered by snapshot mode, so text on the LCD itself may differ slightly.
 
 ## What I learned
