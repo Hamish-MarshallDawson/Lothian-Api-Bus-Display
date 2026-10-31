@@ -1,4 +1,4 @@
-# Makefile for Bus Tracker with Display
+# Makefile for the Lothian bus display
 
 # Directories
 DIR_C_LIB = ../C/lib
@@ -7,42 +7,50 @@ DIR_GUI = $(DIR_C_LIB)/GUI
 DIR_CONFIG = $(DIR_C_LIB)/Config
 DIR_FONTS = $(DIR_C_LIB)/Fonts
 
+# The LCD and touch drivers need wiringPi. If its header is missing, busTrack
+# still builds without a display: --snapshot and --fetch work, the display loop
+# is left out.
+WIRINGPI_H := $(wildcard /usr/include/wiringPi.h /usr/local/include/wiringPi.h)
+ifneq ($(WIRINGPI_H),)
+  HW_CFLAGS   := -DUSE_WIRINGPI_LIB
+  HW_CXXFLAGS := -DBUSTRACKER_HW
+  HW_SOURCES  := $(DIR_LCD)/st7796.c $(DIR_LCD)/ft6336u.c $(DIR_CONFIG)/DEV_Config.c
+  HW_LIBS     := -lwiringPi
+else
+  $(info note: wiringPi not found, building busTrack without display support)
+endif
+
 # Source files
-C_SOURCES = $(DIR_LCD)/st7796.c \
-            $(DIR_LCD)/ft6336u.c \
-            $(DIR_GUI)/GUI_Paint.c \
-            $(DIR_CONFIG)/DEV_Config.c \
+C_SOURCES = $(DIR_GUI)/GUI_Paint.c \
             $(DIR_FONTS)/font8.c \
             $(DIR_FONTS)/font12.c \
             $(DIR_FONTS)/font16.c \
             $(DIR_FONTS)/font20.c \
             $(DIR_FONTS)/font24.c \
             $(DIR_FONTS)/font48.c \
-            $(DIR_FONTS)/font50.c
+            $(DIR_FONTS)/font50.c \
+            $(HW_SOURCES)
 
-CPP_SOURCES = busTrack.cpp openmappull.cpp renderDisplay.cpp
-#CPP_SOURCES = displayTest.cpp
+CPP_SOURCES = busTrack.cpp departures.cpp openmappull.cpp png_write.cpp renderDisplay.cpp
+HELPER_SOURCES = openmappull.cpp openmappull_main.cpp
 
 # Compiler settings
 CC = gcc
 CXX = g++
-CFLAGS = -Wall -O2 -I$(DIR_CONFIG) -I$(DIR_LCD) -I$(DIR_GUI) -I$(DIR_FONTS) -DUSE_WIRINGPI_LIB
-CXXFLAGS = -Wall -O2 -std=c++11 -I$(DIR_CONFIG) -I$(DIR_LCD) -I$(DIR_GUI) -I$(DIR_FONTS)
-LDFLAGS = -lwiringPi -lcurl -lm
+CFLAGS = -Wall -O2 -MMD -MP -I$(DIR_CONFIG) -I$(DIR_LCD) -I$(DIR_GUI) -I$(DIR_FONTS) $(HW_CFLAGS)
+CXXFLAGS = -Wall -O2 -MMD -MP -std=c++11 -I$(DIR_CONFIG) -I$(DIR_LCD) -I$(DIR_GUI) -I$(DIR_FONTS) $(HW_CXXFLAGS)
 
 # Output
-# default target builds both helper and main display app
 TARGET = busTrack
 
-# Build
 all: $(TARGET) openmappull
 
-# Build busTrack (links C device libs + wiringPi)
-$(TARGET): $(C_SOURCES:.c=.o) busTrack.o renderDisplay.o openmappull.o busStopInfo.o config_utils.o
-	$(CXX) $^ -o $@ $(LDFLAGS)
+# busTrack: display (if wiringPi), snapshot PNG, and one-stop fetch
+$(TARGET): $(C_SOURCES:.c=.o) $(CPP_SOURCES:.cpp=.o)
+	$(CXX) $^ -o $@ $(HW_LIBS) -lcurl -lz -lm
 
-# Build openmappull (standalone helper) - link the implementation with the CLI main and config utils
-openmappull: openmappull.o openmappull_main.o config_utils.o
+# openmappull: CLI helper, prints the nearest stops for BUS_ADDRESS
+openmappull: $(HELPER_SOURCES:.cpp=.o)
 	$(CXX) $^ -o $@ -lcurl -lm
 
 %.o: %.c
@@ -52,13 +60,9 @@ openmappull: openmappull.o openmappull_main.o config_utils.o
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(TARGET) openmappull *.o $(DIR_LCD)/*.o $(DIR_GUI)/*.o $(DIR_CONFIG)/*.o $(DIR_FONTS)/*.o
+	rm -f $(TARGET) openmappull *.o *.d $(DIR_LCD)/*.o $(DIR_GUI)/*.o $(DIR_CONFIG)/*.o $(DIR_FONTS)/*.o \
+	      $(DIR_LCD)/*.d $(DIR_GUI)/*.d $(DIR_CONFIG)/*.d $(DIR_FONTS)/*.d
 
-.PHONY: all clean run run-openmappull
+.PHONY: all clean
 
-# Convenience run targets
-run: $(TARGET)
-	./$(TARGET)
-
-run-openmappull: openmappull
-	./openmappull
+-include $(wildcard *.d) $(wildcard $(DIR_GUI)/*.d $(DIR_FONTS)/*.d)

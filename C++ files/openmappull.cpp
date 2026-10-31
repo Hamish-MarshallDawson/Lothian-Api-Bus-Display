@@ -1,8 +1,7 @@
 // openmappull.cpp
 // Provides geocoding and nearest-stop lookup. Exposes getNearestStops() for other programs.
 
-#include "config.h"
-#include "config_utils.h"
+#include "settings.h"
 #include "openmappull.h"
 #include "busStopInfo.h"
 #include "apiHttp.h"
@@ -83,7 +82,7 @@ static bool ensureStopsCache() {
 
     // Date is a required parameter on GetActiveStops. FullDetails gives us the
     // coordinate block rather than bare codes.
-    std::string url = API_CONFIG().baseURL + API_CONFIG().activeStopsEndpoint
+    std::string url = API_BASE() + "/stops/GetActiveStops"
                     + "?Date=" + today
                     + "&FullDetails=true";
 
@@ -253,7 +252,6 @@ bool cardinal_to_deg(const std::string &s, double &out_deg) {
 // such as `busTrack` without causing duplicate main() definitions.
 
 #include "openmappull.h"
-#include "config.h" // for CITY_CENTER_LAT/LON
 #include <algorithm>
 
 // Example: assumes getNearestStops(address, maxStops, vector<BusStopInfo>&) already exists.
