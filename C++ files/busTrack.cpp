@@ -31,6 +31,7 @@
 #include "departures.h"
 #include "openmappull.h"    // getNearestStops, getNearestStopsGrouped
 #include "png_write.h"
+#include "refresh.h"        // BoardRefresher: fetch policy and last good data
 #include "renderDisplay.h"  // drawMainScreen, displayBuffer
 #include "screens.h"        // screen state, touch areas, transitions
 #include "screens_draw.h"   // drawing for every screen but the board
@@ -339,9 +340,16 @@ static int runDisplay() {
     StopBoard board;
     BusStopInfo boardStop;                   // the stop on the board
     std::vector<BusStopInfo> pick;           // stops for the direction being picked
+    BoardRefresher refresher;                // fetch policy: normal, backoff, key, last good data
     touch_data_t touch;
     TapTracker taps;
     long lastTouchMs = nowMs();
+
+    // Copy the refresher's board for the stop on screen; the name comes from the stop list.
+    auto takeBoard = [&]() {
+        board = refresher.board(0);
+        board.stopName = boardStop.stopName;
+    };
 
     auto flush = [&]() {
         std::vector<std::string> names;
@@ -356,10 +364,10 @@ static int runDisplay() {
         while (e.kind != Effect::None && e.kind != Effect::Sleep) {
             switch (e.kind) {
             case Effect::FetchBoard:
-                board = fetchStopBoard(boardStop.stopID, time(nullptr));
-                if (board.stopName.empty()) board.stopName = boardStop.stopName;
-                std::cerr << "Board " << board.stopName << ": " << boardStatusName(board.status)
-                          << " " << board.statusDetail << std::endl;
+                // A user-asked fetch: point the refresher at this stop and fetch now
+                refresher.setStops({boardStop.stopID});
+                refresher.update(time(nullptr));
+                takeBoard();
                 e = onBoard(ui, board.status);
                 break;
             case Effect::Lookup:
@@ -387,6 +395,15 @@ static int runDisplay() {
         }
     };
 
+    // The regular poll: the refresher fetches when one is due. Returns true if it fetched,
+    // so the caller redraws.
+    auto pollBoard = [&]() {
+        if (!refresher.update(time(nullptr))) return false;
+        takeBoard();
+        perform(onBoard(ui, board.status));
+        return true;
+    };
+
     // Splash while the nearest stop is looked up; onBoot then fetches the first board
     drawFrame(buffer, canvas, Screen::Boot, StopDirection::None, ErrorReason::None, board, {}, 0);
     displayBuffer(buffer);
@@ -400,6 +417,7 @@ static int runDisplay() {
 
         bool tapped = false;
         while (nowMs() < minuteEnd && !tapped) {
+            if (pollBoard()) break;                 // fetched: redraw now
             bool touching = get_touch_data(&touch);
             Tap tap;
             if (taps.update(touching, touch.coords[0].x, touch.coords[0].y, nowMs(), tap)) {
@@ -444,7 +462,6 @@ static int runDisplay() {
             }
         }
 
-        if (!tapped) perform(onMinute(ui));       // minute boundary: refresh the board
     }
 
     // Not reached: the loop above runs until the process is stopped
