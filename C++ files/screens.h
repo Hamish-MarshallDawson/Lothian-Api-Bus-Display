@@ -31,14 +31,15 @@ struct Rect {
 constexpr int kScreenW = 320;
 constexpr int kScreenH = 480;
 constexpr int kMinTouch = 48;          // smallest touch target, either side
-constexpr int kHeaderH = 64;           // header band on the stop list and other screens
-constexpr Rect kHeaderBar{0, 0, 320, kHeaderH};   // board: the stop header opens the list
+// Every screen has a status bar at y 0-23, then a 48 px header at y 24-71.
+constexpr int kStatusBarH = 24;
+constexpr Rect kHeaderBar{0, 24, 320, 48};        // board: the stop header opens the list
 constexpr Rect kBoardInto{0, 72, 160, 48};        // board: direction buttons, one half each
 constexpr Rect kBoardOut{160, 72, 160, 48};
-constexpr Rect kBackBtn{0, 0, 80, kHeaderH};      // "< Back" in the header
+constexpr Rect kBackBtn{0, 24, 64, 48};           // "<" back chevron in the header
 constexpr Rect kRetryBtn{16, 336, 288, 56};
 constexpr Rect kChooseBtn{16, 408, 288, 56};
-constexpr int kStopRowsY = kHeaderH;
+constexpr int kStopRowsY = 72;
 constexpr int kStopRowH = 56;
 constexpr int kMaxStopRows = 7;
 constexpr Rect stopRow(int i) { return Rect{0, kStopRowsY + kStopRowH * i, 320, kStopRowH}; }
