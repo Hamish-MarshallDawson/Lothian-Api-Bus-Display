@@ -121,7 +121,17 @@ static void testStopServicesParse() {
     CHECK(parseStopServices(nlohmann::json::object()).empty());
 }
 
+static void testRoundToTenMetres() {
+    CHECK(roundToTenMetres(634.9) == 630);
+    CHECK(roundToTenMetres(635.0) == 640);   // halves round up
+    CHECK(roundToTenMetres(0.4) == 0);
+    CHECK(roundToTenMetres(4.9) == 0);
+    CHECK(roundToTenMetres(-3.0) == -1);     // negative means unknown
+    CHECK(roundToTenMetres(-1.0/0.0 * 0.0) == -1);  // NaN
+}
+
 int main() {
+    testRoundToTenMetres();
     testDistances();
     testVoteFromHandMadeTimetable();
     testUnknownAndTies();

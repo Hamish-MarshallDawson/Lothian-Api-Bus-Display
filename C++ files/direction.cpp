@@ -18,6 +18,11 @@ double distanceM(LatLon a, LatLon b) {
     return R * 2 * std::atan2(std::sqrt(h), std::sqrt(1 - h));
 }
 
+int roundToTenMetres(double m) {
+    if (!(m >= 0.0)) return -1;  // also catches NaN
+    return static_cast<int>(std::floor(m / 10.0 + 0.5)) * 10;
+}
+
 double distToCentreM(LatLon p) {
     return distanceM(p, LatLon{CITY_CENTER_LAT(), CITY_CENTER_LON()});
 }

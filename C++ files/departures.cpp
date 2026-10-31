@@ -33,7 +33,15 @@ static bool parseLocalStamp(const std::string &s, time_t now, time_t &out) {
     if (in.fail()) return false;
     tm.tm_isdst = -1;
     out = mktime(&tm);
-    return out != static_cast<time_t>(-1);
+    if (out == static_cast<time_t>(-1)) return false;
+    // A bare time is today's date. Near midnight the same clock time can mean the
+    // previous or next day, so take the nearest of the three.
+    if (s.find('T') == std::string::npos) {
+        const long long diff = static_cast<long long>(out - now);
+        if (diff < -12LL * 3600) out += 86400;
+        else if (diff > 12LL * 3600) out -= 86400;
+    }
+    return true;
 }
 
 static std::string hhmm(time_t t) {
@@ -143,9 +151,10 @@ static bool getStopEventsJson(const std::string &url, json &doc, BoardStatus &fa
         detail = std::string("bad JSON: ") + e.what();
         return false;
     }
-    if (!doc.is_array()) {
+    // Real replies: StopEvents is one stop object; MultipleStopEvents is {"stops": [...]}
+    if (!doc.is_array() && !doc.is_object()) {
         failStatus = BoardStatus::NetworkError;
-        detail = "response is not an array";
+        detail = "response is neither an object nor an array";
         return false;
     }
     return true;
@@ -168,12 +177,15 @@ StopBoard fetchStopBoard(const std::string &atcocode, time_t now) {
                            doc, b.status, b.statusDetail)) {
         return b;
     }
-    if (doc.empty() || !doc[0].is_object()) {
+    const json *stop = nullptr;
+    if (doc.is_object() && doc.contains("events")) stop = &doc;
+    else if (doc.is_array() && !doc.empty() && doc[0].is_object()) stop = &doc[0];
+    if (!stop) {
         b.status = BoardStatus::NoDepartures;
         b.statusDetail = "empty response";
         return b;
     }
-    StopBoard parsed = boardFromStopEvents(doc[0], now);
+    StopBoard parsed = boardFromStopEvents(*stop, now);
     if (parsed.atcocode.empty()) parsed.atcocode = atcocode;
     return parsed;
 }
@@ -204,10 +216,20 @@ std::vector<StopBoard> fetchStopBoards(const std::vector<std::string> &atcocodes
         return out;
     }
 
-    // Match each returned stop to the code we asked for
+    return boardsFromMultipleStopEvents(doc, atcocodes, now);
+}
+
+std::vector<StopBoard> boardsFromMultipleStopEvents(const json &doc,
+                                                    const std::vector<std::string> &atcocodes,
+                                                    time_t now) {
+    std::vector<StopBoard> out(atcocodes.size());
+    // Real reply: {"stops": [...]}. Also accept a bare array.
+    const json &list = (doc.is_object() && doc.contains("stops")) ? doc["stops"] : doc;
     for (size_t i = 0; i < atcocodes.size(); ++i) {
+        out[i].atcocode = atcocodes[i];
+        out[i].fetchedAt = now;
         const json *found = nullptr;
-        for (const auto &s : doc) {
+        for (const auto &s : list) {
             if (s.is_object() && jstr(s, "atcocode") == atcocodes[i]) { found = &s; break; }
         }
         if (!found) {
