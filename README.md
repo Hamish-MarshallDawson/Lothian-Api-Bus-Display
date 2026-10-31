@@ -48,7 +48,7 @@ The main loop in `busTrack.cpp` fetches departures for the current stop, draws t
    make
    ```
    This builds `busTrack` (the display app) and `openmappull` (a command-line stop finder).
-4. Get an API key from the Trapeze developer portal (link to add once confirmed).
+4. Get an API key from the [Trapeze developer portal](https://devportal-public.trapezegroupazure.co.uk/): sign up, subscribe to the product **NRT Open API Edinburgh CEC Bustracker Open Interface**, then copy the Primary key from your Profile page.
 
 ## Configuration
 
