@@ -320,7 +320,39 @@ static void testPairing() {
     CHECK(distanceM(55.0, 0.0, 56.0, 0.0) > 110000 && distanceM(55.0, 0.0, 56.0, 0.0) < 112000);
 }
 
+// While the screen is asleep the app makes no API calls at all. Only a wake (one
+// fetch, which is refreshNow on the same stop) reaches the network again.
+static void testAsleepMakesNoCalls() {
+    for (Screen from : {Screen::Board, Screen::BusDetail}) {
+        UiState st;
+        st.screen = Screen::Board;
+        st.rowCount = 2;
+        if (from == Screen::BusDetail) step(st, Action::OpenDetail, 0);
+        Effect e = onIdle(st);
+        CHECK(st.screen == Screen::Asleep && e.kind == Effect::Sleep);
+
+        // Every timer and result that could fetch is a no-op while asleep
+        CHECK(onMinute(st).kind == Effect::None);
+        CHECK(onDetailTick(st).kind == Effect::None);
+        CHECK(onBoard(st, BoardStatus::Ok).kind == Effect::None);
+        CHECK(onBoard(st, BoardStatus::NetworkError).kind == Effect::None);
+        CHECK(onLookup(st, true, 3).kind == Effect::None);
+        CHECK(step(st, Action::Retry, 0).kind == Effect::None);
+        CHECK(step(st, Action::PickInto, 0).kind == Effect::None);
+        CHECK(step(st, Action::ToggleRoute, 0).kind == Effect::None);
+        CHECK(onIdle(st).kind == Effect::None);                 // already asleep: no second sleep
+        CHECK(st.screen == Screen::Asleep);
+
+        // Only the wake fetches, and only once
+        e = step(st, Action::Wake, 0);
+        CHECK(st.screen == Screen::Board && e.kind == Effect::FetchBoard);
+        CHECK(step(st, Action::Wake, 0).kind == Effect::None);  // a second wake does nothing
+        CHECK(onDetailTick(st).kind == Effect::None);           // back on the board: no detail timer
+    }
+}
+
 int main() {
+    testAsleepMakesNoCalls();
     testLayout();
     testBoardHitTest();
     testStopListAndErrorHitTest();

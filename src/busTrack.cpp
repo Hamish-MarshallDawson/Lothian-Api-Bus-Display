@@ -32,6 +32,7 @@
 #include "openmappull.h"    // getNearestStops, getNearestStopsGrouped
 #include "png_write.h"
 #include "refresh.h"        // BoardRefresher: fetch policy and last good data
+#include "direction.h"      // Direction, for pairedStop
 #include "hidden_routes.h"  // the routes hidden from the board, saved between runs
 #include "pairing.h"        // Into/Out keeps the stop on screen
 #include "renderDisplay.h"  // drawMainScreen, flushToLcd
@@ -203,9 +204,16 @@ static PairStop toPairStop(const BusStopInfo &s) {
     return p;
 }
 
-// Index in the list of the stop across the road from current. Falls back to the
-// first stop (nearest to home) when none is near enough; says so in the log only.
-static int pairedIndexFor(const std::vector<BusStopInfo> &list, const BusStopInfo &current) {
+// Index in the list of the stop across the road from current. The backend's
+// pairedStop comes first (it is a stub until M7); then the local pairing by distance.
+// Falls back to the first stop (nearest to home) when neither finds one; says so in the log.
+static int pairedIndexFor(const std::vector<BusStopInfo> &list, const BusStopInfo &current,
+                          StopDirection want) {
+    BusStopInfo out;
+    if (pairedStop(current, want == StopDirection::Into ? Direction::Into : Direction::Out, out)) {
+        for (size_t i = 0; i < list.size(); ++i)
+            if (list[i].stopID == out.stopID) return static_cast<int>(i);
+    }
     std::vector<PairStop> cands;
     for (const auto &s : list) cands.push_back(toPairStop(s));
     const int idx = pairedIndex(cands, toPairStop(current));
@@ -489,10 +497,11 @@ static int runDisplay() {
                     if (ok) pick = e.dir == StopDirection::Into ? g.intoCity : g.outOfCity;
                     else pick.clear();
                     const bool pairReq = e.pair;
+                    const StopDirection want = e.dir;
                     e = onLookup(ui, ok, static_cast<int>(pick.size()));
                     // Into/Out: the stop across the road from the one on screen
                     if (pairReq && e.kind == Effect::ShowStop) {
-                        e = Effect(Effect::ShowStop, StopDirection::None, pairedIndexFor(pick, boardStop));
+                        e = Effect(Effect::ShowStop, StopDirection::None, pairedIndexFor(pick, boardStop, want));
                     }
                 }
                 break;
