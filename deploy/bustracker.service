@@ -3,6 +3,9 @@
 Description=Lothian bus departures display
 After=network-online.target
 Wants=network-online.target
+# Don't restart in a tight loop if the program keeps failing at start-up (these belong in [Unit])
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -14,9 +17,6 @@ EnvironmentFile=/home/hamis/.config/bustracker/env
 ExecStart=/usr/local/bin/busTrack
 Restart=on-failure
 RestartSec=10
-# Don't restart in a tight loop if the program keeps failing at start-up
-StartLimitIntervalSec=300
-StartLimitBurst=5
 
 [Install]
 WantedBy=multi-user.target
