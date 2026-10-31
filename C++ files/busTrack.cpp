@@ -71,6 +71,7 @@ struct Options {
     std::string fetchStop;      // --fetch
     time_t now = 0;             // --now (0 = real clock)
     int ageSecs = 0;            // --age: render as if the data is this many seconds old
+    std::string direction = "none";  // --direction into|out|none: board highlight (snapshot)
 };
 
 static bool parseOptions(int argc, char **argv, Options &o) {
@@ -82,6 +83,7 @@ static bool parseOptions(int argc, char **argv, Options &o) {
         else if (arg == "--screen" && hasNext) o.screen = argv[++i];
         else if (arg == "--fetch" && hasNext) o.fetchStop = argv[++i];
         else if (arg == "--age" && hasNext) o.ageSecs = std::atoi(argv[++i]);
+        else if (arg == "--direction" && hasNext) o.direction = argv[++i];
         else if (arg == "--now" && hasNext) {
             std::tm tm{};
             std::istringstream in(argv[++i]);
@@ -173,6 +175,12 @@ static std::string stopDetail(const BusStopInfo &s, StopDirection dir) {
     return dist + " - " + d;   // the baked fonts are ASCII only
 }
 
+// True if a stop with this ATCO code is in the list.
+static bool hasStop(const std::vector<BusStopInfo> &list, const std::string &stopID) {
+    return std::any_of(list.begin(), list.end(),
+                       [&](const BusStopInfo &s) { return s.stopID == stopID; });
+}
+
 // Seconds since the board's data was fetched, or -1 if there is none. The error
 // screen shows it when it is recent.
 static long staleAgeSecs(const StopBoard &board, time_t now) {
@@ -258,8 +266,10 @@ static int runSnapshot(const Options &o) {
     if (!buffer) { std::cerr << "Out of memory\n"; return 1; }
     gfx::Canvas frame(buffer, w, h);
 
-    drawFrame(frame, screen, StopDirection::Into, reason, board, sampleStops(),
-              frameNow, staleSecs, 42);
+    StopDirection dir = StopDirection::None;
+    if (o.direction == "into") dir = StopDirection::Into;
+    else if (o.direction == "out") dir = StopDirection::Out;
+    drawFrame(frame, screen, dir, reason, board, sampleStops(), frameNow, staleSecs, 42);
 
     bool ok = writePngRGB565(o.snapshotPath, frame.data(), w, h);
     free(buffer);
@@ -393,7 +403,15 @@ static int runDisplay() {
                     std::vector<BusStopInfo> nearest;
                     bool ok = getNearestStops(address, 1, nearest) && !nearest.empty();
                     if (ok) boardStop = nearest.front();
-                    e = onBoot(ui, ok, ok ? 1 : 0);
+                    // The nearest stop's own direction, so the board highlights the right button.
+                    // A stop in neither group highlights neither.
+                    StopDirection bd = StopDirection::None;
+                    GroupedStops g;
+                    if (ok && getNearestStopsGrouped(address, perGroup, g)) {
+                        if (hasStop(g.intoCity, boardStop.stopID)) bd = StopDirection::Into;
+                        else if (hasStop(g.outOfCity, boardStop.stopID)) bd = StopDirection::Out;
+                    }
+                    e = onBoot(ui, ok, ok ? 1 : 0, bd);
                 } else {
                     GroupedStops g;
                     bool ok = getNearestStopsGrouped(address, perGroup, g);

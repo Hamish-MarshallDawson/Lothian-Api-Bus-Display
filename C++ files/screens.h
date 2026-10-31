@@ -81,7 +81,9 @@ struct UiState {
 Effect step(UiState &st, Action a, int arg);
 
 // Results of the work the loop starts. Each returns what to do next.
-Effect onBoot(UiState &st, bool ok, int count);            // nearest stops at startup
+// nearest stops at startup. dir is the direction that stop was classified as
+// (None when it is in neither group), and the board highlights that.
+Effect onBoot(UiState &st, bool ok, int count, StopDirection dir = StopDirection::None);
 Effect onLookup(UiState &st, bool ok, int count);          // stops for a direction
 Effect onBoard(UiState &st, BoardStatus status);           // a StopEvents fetch finished
 Effect onMinute(UiState &st);                              // the once-a-minute refresh
