@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "tracking.h"
 #include "../gfx/canvas.h"
 #include "../gfx/map.h"
 #include "../gfx/widgets.h"
@@ -39,3 +40,7 @@ struct BusDetailView {
 // The map uses tiles when they are on disk and the plain background when they are not.
 void drawBusDetail(gfx::Canvas &c, const BusDetailView &v, const gfx::StatusBarText &status,
                    gfx::TileStore &tiles);
+
+// The view for a tracked bus, from the tracking data (tracking.h). routeFill is the route
+// colour from busColours.h.
+BusDetailView detailFromTrack(const BusTrack &t, gfx::Color routeFill);

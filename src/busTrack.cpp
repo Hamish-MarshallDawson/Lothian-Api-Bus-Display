@@ -236,47 +236,44 @@ static void drawFrame(gfx::Canvas &frame, Screen screen, StopDirection dir, Erro
 //   bus-detail-stuck        not moved for 4 min
 //   bus-detail-notstarted   no vehicle yet, leaves Waverley Bridge at 16:02
 static int runBusDetailSnapshot(const Options &o, const std::string &variant, time_t now) {
-    BusDetailView v;
-    v.service = "31";
-    v.destination = "Bonnyrigg";
-    v.routeFill = gfx::rgb(0x7B, 0x6A, 0x58);  // busLineColours["31"] = #7B6A58
-    v.stops = {
-        {"Waverley Bridge", "16:02", 55.9515, -3.1905},
-        {"Princes Street (Scott Mon.)", "16:04", 55.9517, -3.1932},
-        {"West Princes Street", "16:06", 55.9499, -3.2010},
-        {"Haymarket Station", "16:09", 55.9455, -3.2212},
-        {"West Coates", "16:11", 55.9410, -3.2285},
-        {"Roseburn Terrace", "16:13", 55.9395, -3.2380},
+    // The demo trip, as tracking would report it, then mapped to the screen's view
+    BusTrack t;
+    t.service = "31";
+    t.destination = "Bonnyrigg";
+    t.stops = {
+        {"", "Waverley Bridge", 55.9515, -3.1905, "16:02"},
+        {"", "Princes Street (Scott Mon.)", 55.9517, -3.1932, "16:04"},
+        {"", "West Princes Street", 55.9499, -3.2010, "16:06"},
+        {"", "Haymarket Station", 55.9455, -3.2212, "16:09"},
+        {"", "West Coates", 55.9455, -3.2290, "16:11"},
+        {"", "Roseburn Terrace", 55.9457, -3.2370, "16:13"},
     };
-    v.myStop = 3;
-    v.nextStop = 2;
-    v.hasBus = true;
-    v.busLat = 55.9508;
-    v.busLon = -3.1975;
-    v.lastUpdateAgeS = 20;
-    v.lateMin = 4;
-    v.stopsAway = 1;
-    v.dueMin = 6;
-    v.state = DetailState::Live;
+    t.myStopIndex = 3;
+    t.nextStopIndex = 2;
+    t.busLat = 55.9508;
+    t.busLon = -3.1975;
+    t.lastUpdateAgeS = 20;
+    t.lateMin = 4;
+    t.stopsAway = 1;
+    t.dueMin = 6;
+    t.state = TrackState::Live;
 
     gfx::StatusBarText status{"16:02", "Live", theme::LIVE, true};
     if (variant == "bus-detail-stale") {
-        v.state = DetailState::Stale;
-        v.lastUpdateAgeS = 180;
+        t.state = TrackState::Stale;
+        t.lastUpdateAgeS = 180;
         status = gfx::StatusBarText{"16:02", "Offline", theme::DANGER, false};
     } else if (variant == "bus-detail-stuck") {
-        v.stuck = true;
-        v.stuckForS = 240;
+        t.stuck = true;
+        t.stuckForS = 240;
     } else if (variant == "bus-detail-notstarted") {
-        v.state = DetailState::NotStarted;
-        v.hasBus = false;
-        v.nextStop = -1;
-        v.stopsAway = -1;
-        v.dueMin = -1;
-        v.originName = "Waverley Bridge";
-        v.originTime = "16:05";
+        t.state = TrackState::NotStarted;
+        t.nextStopIndex = -1;
+        t.stopsAway = -1;
+        t.dueMin = -1;
         status = gfx::StatusBarText{"16:02", "Scheduled", theme::TEXT_MUTED, false};
     }
+    const BusDetailView v = detailFromTrack(t, gfx::rgb(0x7B, 0x6A, 0x58));  // busLineColours["31"]
     (void)now;
 
     const int w = ST7796_WIDTH, h = ST7796_HEIGHT;

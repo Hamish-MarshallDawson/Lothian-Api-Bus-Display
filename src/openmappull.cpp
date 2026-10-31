@@ -391,3 +391,8 @@ bool getNearestStopsGrouped(const std::string &address, int perGroup, GroupedSto
     cache[key] = out;
     return true;
 }
+
+// Stub for the API commit. Implemented in M7.
+bool pairedStop(const BusStopInfo &, Direction, BusStopInfo &) {
+    return false;
+}

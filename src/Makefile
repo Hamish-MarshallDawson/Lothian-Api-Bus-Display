@@ -27,7 +27,8 @@ GFX_SOURCES = $(DIR_GFX)/canvas.cpp $(DIR_GFX)/text.cpp $(DIR_GFX)/widgets.cpp $
 
 # Library code shared by busTrack and the tests
 LIB_SOURCES = departures.cpp timetables.cpp direction.cpp diskcache.cpp openmappull.cpp refresh.cpp \
-              png_write.cpp renderDisplay.cpp bus_detail.cpp screens.cpp screens_draw.cpp $(GFX_SOURCES)
+              png_write.cpp renderDisplay.cpp bus_detail.cpp screens.cpp screens_draw.cpp tracking.cpp tiles.cpp \
+              $(GFX_SOURCES)
 CPP_SOURCES = busTrack.cpp $(LIB_SOURCES)
 
 # Compiler settings

@@ -172,3 +172,34 @@ void drawBusDetail(Canvas &c, const BusDetailView &v, const gfx::StatusBarText &
     drawInfo(c, v);
     drawNextStops(c, v);
 }
+
+BusDetailView detailFromTrack(const BusTrack &t, gfx::Color routeFill) {
+    BusDetailView v;
+    v.service = t.service;
+    v.routeFill = routeFill;
+    v.destination = t.destination;
+    switch (t.state) {
+    case TrackState::NotStarted: v.state = DetailState::NotStarted; break;
+    case TrackState::Live:       v.state = DetailState::Live; break;
+    case TrackState::Stale:      v.state = DetailState::Stale; break;
+    case TrackState::Finished:   v.state = DetailState::Finished; break;
+    case TrackState::Unavailable: v.state = DetailState::Unavailable; break;
+    }
+    for (const auto &s : t.stops) v.stops.push_back(DetailStop{s.name, s.scheduled, s.lat, s.lon});
+    v.myStop = t.myStopIndex;
+    v.nextStop = t.nextStopIndex;
+    v.hasBus = t.state == TrackState::Live || t.state == TrackState::Stale;
+    v.busLat = t.busLat;
+    v.busLon = t.busLon;
+    v.lastUpdateAgeS = t.lastUpdateAgeS;
+    v.lateMin = t.lateMin;
+    v.stopsAway = t.stopsAway;
+    v.dueMin = t.dueMin;
+    v.stuck = t.stuck;
+    v.stuckForS = t.stuckForS;
+    if (t.state == TrackState::NotStarted && !t.stops.empty()) {
+        v.originName = t.stops.front().name;
+        v.originTime = t.stops.front().scheduled;
+    }
+    return v;
+}
