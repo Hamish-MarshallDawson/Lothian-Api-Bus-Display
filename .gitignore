@@ -11,6 +11,9 @@ bin/
 obj/
 
 # Personal and secret config (never commit keys or the home address)
+# config.h and busStopInfo.cpp are no longer used, but old checkouts still hold them with an address
+config.h
+busStopInfo.cpp
 busStopInfo.txt
 busStopInfo.local
 config/*.txt
