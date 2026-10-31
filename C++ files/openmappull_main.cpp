@@ -1,8 +1,7 @@
 // openmappull_main.cpp
 // Thin CLI wrapper that calls getNearestStops() implemented in openmappull.cpp
 
-#include "config.h"
-#include "config_utils.h"
+#include "settings.h"
 #include "openmappull.h"
 
 #include <curl/curl.h>
@@ -11,8 +10,6 @@
 
 int main(int argc, char** argv) {
     curl_global_init(CURL_GLOBAL_DEFAULT);
-    // Allow config.txt to override defaults in config.h
-    parseConfigFile("config.txt", USER_AGENT(), CONFIG_NUM_STOPS(), CONFIG_ADDRESS());
 
     std::string address = CONFIG_ADDRESS();
     if(argc > 1) {
@@ -22,7 +19,7 @@ int main(int argc, char** argv) {
     }
 
     if(address.empty()) {
-        std::cerr << "Address is empty (set 'address=' in config.h or pass an address on the CLI)\n";
+        std::cerr << "Address is empty (set BUS_ADDRESS or pass an address on the CLI)\n";
         curl_global_cleanup();
         return 3;
     }

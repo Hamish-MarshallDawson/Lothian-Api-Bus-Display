@@ -1,0 +1,53 @@
+[
+  {
+    "time": "2026-10-31T16:00:00",
+    "atcocode": "7000000002",
+    "name": "George Street (fixture)",
+    "updatehint": "2026-10-31T16:01:00",
+    "notices": [],
+    "events": [
+      {
+        "operator": "LOTH",
+        "publicservicename": "23",
+        "destination": "Craigmillar",
+        "scheduledeparturetime": "2026-10-31T16:03:00",
+        "departuretime": null,
+        "status": "cancelled",
+        "occupancy": 0,
+        "seatavailability": { "count": 0, "level": "None" },
+        "vehicle": { "fleetno": "", "lastupdate": "", "coordinate": { "latitude": 0, "longitude": 0 } },
+        "notices": [],
+        "atcocode": "7000000002",
+        "indicator": "Stop B"
+      },
+      {
+        "operator": "LOTH",
+        "publicservicename": "27",
+        "destination": "Silverknowes",
+        "scheduledeparturetime": "2026-10-31T16:04:00",
+        "departuretime": "2026-10-31T16:11:00",
+        "status": "delayed",
+        "occupancy": 0,
+        "seatavailability": { "count": 1, "level": "Low" },
+        "vehicle": { "fleetno": "3301", "lastupdate": "2026-10-31T15:59:30", "coordinate": { "latitude": 55.9560, "longitude": -3.1900 } },
+        "notices": [],
+        "atcocode": "7000000002",
+        "indicator": "Stop B"
+      },
+      {
+        "operator": "LOTH",
+        "publicservicename": "36",
+        "destination": "Portobello",
+        "scheduledeparturetime": "2026-10-31T16:06:00",
+        "departuretime": 300,
+        "status": "",
+        "occupancy": 0,
+        "seatavailability": { "count": 30, "level": "High" },
+        "vehicle": { "fleetno": "", "lastupdate": "", "coordinate": { "latitude": 0, "longitude": 0 } },
+        "notices": [],
+        "atcocode": "7000000002",
+        "indicator": "Stop B"
+      }
+    ]
+  }
+]

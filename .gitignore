@@ -1,75 +1,39 @@
-# Prerequisites
-*.d
-
-# Compiled Object files
-*.slo
-*.lo
+# Build output (C++ objects, binaries, libraries)
 *.o
-*.obj
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Linker files
-*.ilk
-
-# Debugger Files
-*.pdb
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
+*.d
 *.a
-*.lib
-
-# Executables
-*.exe
+*.so
 *.out
-*.app
+C++ files/busTrack
+C++ files/openmappull
+C/bin/
+C/main
+archive/displayTest
+build/
+bin/
+obj/
 
-# debug information files
-*.dwo
-
-#Personal info 
+# Personal and secret config (never commit keys or the home address)
+config.h
+busStopInfo.cpp
 busStopInfo.txt
 busStopInfo.local
-busStopInfo.cpp
 config/*.txt
+config.txt
 *.key
 api_keys.txt
 secrets.txt
 .env
 .env.local
-example.md
-*.html
+# Trapeze API spec is for authorised users only
+.agents/novus-openapi-*.json
 
-# Build directories
-build/
-bin/
-obj/
-
-# IDE files
-.vscode/settings.json
-.vscode/launch.json
+# Editor and tool state
+.vscode/
 *.swp
 *.swo
 *~
-*.png
-
-
-config.h
-
-# Local agent and tool scratch (API spec is for authorised users only)
-.agents/
 .worktrees/
 .playwright-mcp/
+.remember/
+.agents/

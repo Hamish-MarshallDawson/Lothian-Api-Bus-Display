@@ -8,7 +8,7 @@
 #include <iostream>
 #include <curl/curl.h>
 
-#include "config.h"
+#include "settings.h"
 
 inline size_t apiHttpWriteCallback(void *contents, size_t size, size_t nmemb, void *userp) {
     ((std::string *)userp)->append((char *)contents, size * nmemb);
@@ -18,12 +18,12 @@ inline size_t apiHttpWriteCallback(void *contents, size_t size, size_t nmemb, vo
 // GET a URL with the APIM subscription key attached.
 // Returns true only on a transport-level success AND an HTTP 2xx.
 // httpCodeOut is filled in either way so the caller can tell 401 from 429.
+// With no key set, returns false and httpCodeOut stays 0.
 inline bool apiHttpGet(const std::string &url, std::string &bodyOut, long &httpCodeOut) {
     bodyOut.clear();
     httpCodeOut = 0;
 
-    const std::string &key = API_CONFIG().subscriptionKey;
-    if (key.empty()) {
+    if (API_KEY().empty()) {
         std::cerr << "apiHttpGet: no subscription key. Set BUSTRACKER_KEY in the environment." << std::endl;
         return false;
     }
@@ -32,7 +32,7 @@ inline bool apiHttpGet(const std::string &url, std::string &bodyOut, long &httpC
     if (!curl) return false;
 
     struct curl_slist *headers = nullptr;
-    headers = curl_slist_append(headers, ("Ocp-Apim-Subscription-Key: " + key).c_str());
+    headers = curl_slist_append(headers, ("Ocp-Apim-Subscription-Key: " + API_KEY()).c_str());
     headers = curl_slist_append(headers, "Accept: application/json");
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());

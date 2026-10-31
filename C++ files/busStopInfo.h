@@ -34,7 +34,4 @@ struct BusStopInfo {
           orientation_deg(orient) {}
 };
 
-// Provide this API: returns vector of static fallback stops (implemented in busStopInfo.cpp)
-std::vector<BusStopInfo> getAllBusStops();
-
 #endif // BUSSTOPINFO_H

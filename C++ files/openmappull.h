@@ -19,6 +19,4 @@ bool getNearestStops(const std::string &address, int maxStops, std::vector<BusSt
 // New: grouped nearest stops (into/out of city)
 bool getNearestStopsGrouped(const std::string &address, int perGroup, GroupedStops &out);
 
-// parseConfigFile moved to config_utils.h/.cpp for shared use
-
 #endif // OPENMAPPULL_H
