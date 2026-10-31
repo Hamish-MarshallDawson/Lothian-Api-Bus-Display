@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <ctime>
 #include <iostream>
 #include <map>
@@ -25,6 +26,7 @@
 #include "direction.h"
 #include "openmappull.h"
 #include "settings.h"
+#include "diskcache.h"
 #include "timetables.h"
 
 using json = nlohmann::json;
@@ -74,10 +76,34 @@ static double angularDiffDeg(double a, double b) {
 // ---------------------------------------------------------------------------
 // Geocoding (Nominatim), cached per address
 
+// Geocoded addresses persist in ~/.cache/bustracker/geocode.json. The file is
+// keyed by a hash of the address, so the address text never reaches the disk.
+static std::string addressKey(const std::string &address) {
+    unsigned long long h = 1469598103934665603ULL;  // FNV-1a, 64-bit
+    for (unsigned char c : address) { h ^= c; h *= 1099511628211ULL; }
+    char buf[20];
+    snprintf(buf, sizeof(buf), "%016llx", h);
+    return buf;
+}
+
+static json &geocodeStore() {
+    static json store;
+    static bool loaded = false;
+    if (!loaded) {
+        loaded = true;
+        if (!diskcache::load("geocode.json", store) || !store.is_object()) store = json::object();
+    }
+    return store;
+}
+
 static bool geocode(const std::string &address, LatLon &out) {
-    static std::map<std::string, LatLon> cache;
-    auto hit = cache.find(address);
-    if (hit != cache.end()) { out = hit->second; return true; }
+    json &store = geocodeStore();
+    const std::string key = addressKey(address);
+    auto hit = store.find(key);
+    if (hit != store.end() && hit->is_object()) {
+        out = LatLon{hit->value("lat", 0.0), hit->value("lon", 0.0)};
+        return true;
+    }
 
     CURL *curl = curl_easy_init();
     if (!curl) return false;
@@ -105,7 +131,8 @@ static bool geocode(const std::string &address, LatLon &out) {
         auto arr = json::parse(body);
         if (!arr.is_array() || arr.empty()) return false;
         LatLon ll{std::stod(jstr(arr[0], "lat")), std::stod(jstr(arr[0], "lon"))};
-        cache[address] = ll;
+        store[key] = json{{"lat", ll.lat}, {"lon", ll.lon}};
+        diskcache::save("geocode.json", store);
         out = ll;
         return true;
     } catch (const std::exception &e) {
@@ -127,9 +154,36 @@ static std::map<std::string, LatLon> g_stopAt;  // atco -> position, from g_stop
 static std::string g_stopsDate;
 static time_t g_stopsRetryAt = 0;
 
+static void setStops(const std::vector<StopRec> &stops, const std::string &date) {
+    g_stops = stops;
+    g_stopAt.clear();
+    for (const auto &s : g_stops) g_stopAt[s.atco] = s.at;
+    g_stopsDate = date;
+}
+
+// Today's list from ~/.cache/bustracker/stops-<date>.json. Stored compactly as
+// [atco, naptan, name, lat, lon] rows.
+static bool loadStopsFromDisk(const std::string &today) {
+    json j;
+    if (!diskcache::load("stops-" + today + ".json", j) || !j.is_array()) return false;
+    std::vector<StopRec> s;
+    for (const auto &r : j) {
+        if (!r.is_array() || r.size() < 5) continue;
+        s.push_back(StopRec{r[0].get<std::string>(), r[1].get<std::string>(), r[2].get<std::string>(),
+                            LatLon{r[3].get<double>(), r[4].get<double>()}});
+    }
+    if (s.empty()) return false;
+    setStops(s, today);
+    return true;
+}
+
 static bool ensureStops() {
     const std::string today = todayLocal();
     if (!g_stops.empty() && g_stopsDate == today) return true;
+    if (g_stops.empty() && loadStopsFromDisk(today)) {
+        std::cerr << "stop list: " << g_stops.size() << " stops from cache" << std::endl;
+        return true;
+    }
     if (!g_stops.empty() && time(nullptr) < g_stopsRetryAt) return true;  // stale list is fine for now
 
     std::string body;
@@ -162,11 +216,17 @@ static bool ensureStops() {
         g_stopsRetryAt = time(nullptr) + 600;
         return !g_stops.empty();
     }
-    g_stops = fresh;
-    g_stopAt.clear();
-    for (const auto &s : g_stops) g_stopAt[s.atco] = s.at;
-    g_stopsDate = today;
+    setStops(fresh, today);
     g_stopsRetryAt = 0;
+
+    json rows = json::array();
+    for (const auto &s : g_stops) {
+        rows.push_back(json::array({s.atco, s.naptan, s.name, s.at.lat, s.at.lon}));
+    }
+    const std::string file = "stops-" + today + ".json";
+    diskcache::save(file, rows);
+    diskcache::pruneOthers("stops-", file);
+
     std::cerr << "stop list: " << g_stops.size() << " stops for " << today << std::endl;
     return true;
 }
@@ -182,15 +242,34 @@ struct StopDirection {
 // Timetable direction for one stop, cached for the day. Looks at up to two
 // services that call at the stop. Unknown means the caller should use the
 // bearing guess.
-static StopDirection timetableDirection(const std::string &atco) {
-    struct Entry { std::string date; StopDirection result; time_t retryAt; bool final; };
-    static std::map<std::string, Entry> cache;
+// Today's per-stop results, in memory and in ~/.cache/bustracker/direction-<date>.json.
+// Each entry: {"dir": 0|1|2 (unknown, into, out), "how", "final", "retryAt"}.
+static json &directionStore(const std::string &today) {
+    static json store;
+    static std::string loadedDate;
+    if (loadedDate != today) {
+        loadedDate = today;
+        const std::string file = "direction-" + today + ".json";
+        if (!diskcache::load(file, store) || !store.is_object()) store = json::object();
+        diskcache::pruneOthers("direction-", file);
+    }
+    return store;
+}
 
+static StopDirection timetableDirection(const std::string &atco) {
     const std::string today = todayLocal();
     const time_t now = time(nullptr);
-    auto hit = cache.find(atco);
-    if (hit != cache.end() && hit->second.date == today && (hit->second.final || now < hit->second.retryAt)) {
-        return hit->second.result;
+    json &store = directionStore(today);
+    auto hit = store.find(atco);
+    if (hit != store.end() && hit->is_object()) {
+        const bool final = hit->value("final", false);
+        const time_t retryAt = static_cast<time_t>(hit->value("retryAt", 0LL));
+        if (final || now < retryAt) {
+            StopDirection cached;
+            cached.dir = static_cast<Direction>(hit->value("dir", 0));
+            cached.how = hit->value("how", std::string());
+            return cached;
+        }
     }
 
     StopDirection res;
@@ -220,8 +299,10 @@ static StopDirection timetableDirection(const std::string &atco) {
     }
 
     // A timetable answer holds for the day. A failure is retried after 10 minutes.
-    Entry e{today, res, now + 600, res.dir != Direction::Unknown || ok};
-    cache[atco] = e;
+    const bool final = res.dir != Direction::Unknown || ok;
+    store[atco] = json{{"dir", static_cast<int>(res.dir)}, {"how", res.how},
+                       {"final", final}, {"retryAt", static_cast<long long>(now + 600)}};
+    diskcache::save("direction-" + today + ".json", store);
     return res;
 }
 
@@ -295,13 +376,12 @@ bool getNearestStopsGrouped(const std::string &address, int perGroup, GroupedSto
         bool into;
         if (d.dir != Direction::Unknown) {
             into = d.dir == Direction::Into;
-            std::cerr << "direction " << s.stopID << " " << s.stopName << ": "
-                      << (into ? "into" : "out") << " by " << d.how << std::endl;
+            // No stop code or name here: these stops are near home
+            std::cerr << "direction: " << (into ? "into" : "out") << " by " << d.how << std::endl;
         } else {
             double stopBearing = bearingDeg(at, LatLon{CITY_CENTER_LAT(), CITY_CENTER_LON()});
             into = angularDiffDeg(stopBearing, userBearing) <= 90.0;
-            std::cerr << "direction " << s.stopID << " " << s.stopName << ": "
-                      << (into ? "into" : "out") << " by bearing guess (" << d.how << ")" << std::endl;
+            std::cerr << "direction: " << (into ? "into" : "out") << " by bearing guess (" << d.how << ")" << std::endl;
         }
 
         auto &group = into ? out.intoCity : out.outOfCity;

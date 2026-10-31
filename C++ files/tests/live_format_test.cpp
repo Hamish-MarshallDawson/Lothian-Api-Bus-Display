@@ -135,7 +135,40 @@ static void testMidnightWrap() {
     }
 }
 
+// LATE rule. Events are shaped like real replies; no real stop codes or names.
+//   API says delayed               -> delayed, whatever the times say
+//   no API flag, live +3 min       -> delayed (2+ min after schedule)
+//   no API flag, live +1 min       -> not delayed (within a minute is normal)
+//   countdown 120 s from 16:00 for a 16:00 bus -> live +2 min -> delayed
+//   live time missing              -> not delayed, not live
+static void testLateRule() {
+    nlohmann::json stop = nlohmann::json::parse(R"({
+        "name": "Test", "atcocode": "1",
+        "events": [
+            {"publicservicename": "1", "destination": "A", "status": "delayed",
+             "scheduledeparturetime": "16:00", "departuretime": "16:00"},
+            {"publicservicename": "2", "destination": "B", "status": null,
+             "scheduledeparturetime": "16:00", "departuretime": "16:03"},
+            {"publicservicename": "3", "destination": "C", "status": null,
+             "scheduledeparturetime": "16:00", "departuretime": "16:01"},
+            {"publicservicename": "4", "destination": "D", "status": null,
+             "scheduledeparturetime": "16:00", "departuretime": 120},
+            {"publicservicename": "5", "destination": "E", "status": null,
+             "scheduledeparturetime": "16:05", "departuretime": null}
+        ]})");
+    StopBoard b = boardFromStopEvents(stop, localTime(2026, 10, 31, 16, 0));
+    CHECK(b.departures.size() == 5);
+    for (const auto &d : b.departures) {
+        if (d.service == "1") { CHECK(d.delayed); CHECK(d.lateMin == 0); }
+        if (d.service == "2") { CHECK(d.delayed); CHECK(d.lateMin == 3); }
+        if (d.service == "3") { CHECK(!d.delayed); CHECK(d.lateMin == 1); }
+        if (d.service == "4") { CHECK(d.delayed); CHECK(d.lateMin == 2); CHECK(d.live); }
+        if (d.service == "5") { CHECK(!d.delayed); CHECK(!d.live); CHECK(d.lateMin == 0); }
+    }
+}
+
 int main() {
+    testLateRule();
     testLiveStopEvents();
     testLiveMultipleStopEvents();
     testLiveStopServices();

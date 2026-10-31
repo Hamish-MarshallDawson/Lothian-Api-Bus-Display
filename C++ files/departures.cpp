@@ -94,22 +94,32 @@ StopBoard boardFromStopEvents(const json &stopObj, time_t now) {
 
         // Live prediction: an integer is seconds-to-go, a string is a date-time.
         auto dt = ev.find("departuretime");
+        time_t predT = 0;
+        bool havePred = false;
         if (dt != ev.end()) {
             if (dt->is_number_integer()) {
                 d.minutes = dt->get<int>() / 60;
-                d.hasMinutes = d.live = true;
+                predT = now + dt->get<int>();
+                havePred = true;
             } else if (dt->is_string()) {
-                time_t t = 0;
-                if (parseLocalStamp(dt->get<std::string>(), now, t)) {
-                    d.minutes = static_cast<int>((t - now) / 60);
-                    d.hasMinutes = d.live = true;
+                if (parseLocalStamp(dt->get<std::string>(), now, predT)) {
+                    d.minutes = static_cast<int>((predT - now) / 60);
+                    havePred = true;
                 }
             }
         }
-        if (!d.hasMinutes && haveSched) {
+        if (havePred) {
+            d.hasMinutes = d.live = true;
+            // Live minus scheduled. Real replies show a late bus as a live time
+            // a few minutes after its schedule, so this is the basis for LATE.
+            if (haveSched) d.lateMin = static_cast<int>((predT - schedT) / 60);
+        } else if (haveSched) {
             d.minutes = static_cast<int>((schedT - now) / 60);
             d.hasMinutes = true;
         }
+        // LATE means the API said "delayed", or the live time is 2+ min after schedule.
+        // Having a live time on its own is not lateness.
+        d.delayed = d.delayed || (d.live && d.lateMin >= 2);
         if (!d.hasMinutes) continue;  // nothing to show
         b.departures.push_back(d);
     }
