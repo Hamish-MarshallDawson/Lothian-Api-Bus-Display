@@ -68,6 +68,11 @@ struct MapScene {
     Rect rect{0, 0, 320, 200};  // where the map sits on the canvas
     std::vector<MapPath> paths;
     std::vector<MapMarker> markers;
+    // A point off the panel: drawn as a pill at the panel edge, pointing towards it (if on, and outside)
+    bool edgeOn = false;
+    GeoPoint edgeTarget{0, 0};
+    std::string edgeLabel;
+    Color edgeFill = 0;
 };
 
 // A tile by its address, as TileStore wants it
@@ -81,12 +86,15 @@ std::vector<TileRef> sceneTiles(const MapScene &scene);
 
 // Pick the centre and the largest zoom (within minZoom..maxZoom) at which every point fits
 // inside the rect with padPx spare on each side.
-void fitScene(MapScene &scene, const std::vector<GeoPoint> &points, int padPx,
-              int minZoom = 10, int maxZoom = 16);
+bool fitScene(MapScene &scene, const std::vector<GeoPoint> &points, int padPx,
+              int minZoom = 10, int maxZoom = 16, const GeoPoint *focus = nullptr);
 
 // Draw the basemap (background, then tiles on disk), the paths, the markers, and the
 // "© OpenStreetMap contributors" credit in the bottom-right corner.
 void drawMap(Canvas &c, const MapScene &scene, TileStore &tiles);
+
+// Where a geographic point lands on the canvas for this scene (may be off the panel)
+WorldPoint canvasPoint(const MapScene &scene, GeoPoint p);
 
 // The plain background used where there is no tile
 constexpr Color kMapFallback = rgb(0xF2, 0xF4, 0xF5);
