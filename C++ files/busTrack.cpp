@@ -228,7 +228,7 @@ static int runSnapshot(const Options &o) {
     const long staleSecs = o.ageSecs > 0 ? o.ageSecs : -1;
 
     const int w = ST7796_WIDTH, h = ST7796_HEIGHT;
-    UWORD *buffer = static_cast<UWORD *>(malloc(sizeof(UWORD) * w * h));
+    uint16_t *buffer = static_cast<uint16_t *>(malloc(sizeof(uint16_t) * w * h));
     if (!buffer) { std::cerr << "Out of memory\n"; return 1; }
     gfx::Canvas frame(buffer, w, h);
 
@@ -309,10 +309,10 @@ static int runDisplay() {
     }
     backlight_init();
     st7796_init();
-    st7796_clear(BLACK);
+    st7796_clear(0x0000);  // black
     ft6336u_init();
 
-    UWORD *buffer = static_cast<UWORD *>(malloc(sizeof(UWORD) * ST7796_WIDTH * ST7796_HEIGHT));
+    uint16_t *buffer = static_cast<uint16_t *>(malloc(sizeof(uint16_t) * ST7796_WIDTH * ST7796_HEIGHT));
     if (!buffer) {
         std::cerr << "Failed to allocate memory for the frame" << std::endl;
         DEV_ModuleExit();

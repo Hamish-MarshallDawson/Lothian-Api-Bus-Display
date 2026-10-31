@@ -3,9 +3,7 @@
 # Directories
 DIR_C_LIB = ../C/lib
 DIR_LCD = $(DIR_C_LIB)/lcd
-DIR_GUI = $(DIR_C_LIB)/GUI
 DIR_CONFIG = $(DIR_C_LIB)/Config
-DIR_FONTS = $(DIR_C_LIB)/Fonts
 DIR_GFX = ../gfx
 
 # The LCD and touch drivers need wiringPi. If its header is missing, busTrack
@@ -22,15 +20,7 @@ else
 endif
 
 # Source files
-C_SOURCES = $(DIR_GUI)/GUI_Paint.c \
-            $(DIR_FONTS)/font8.c \
-            $(DIR_FONTS)/font12.c \
-            $(DIR_FONTS)/font16.c \
-            $(DIR_FONTS)/font20.c \
-            $(DIR_FONTS)/font24.c \
-            $(DIR_FONTS)/font48.c \
-            $(DIR_FONTS)/font50.c \
-            $(HW_SOURCES)
+C_SOURCES = $(HW_SOURCES)
 
 # Anti-aliased canvas, baked fonts and widgets (gfx/), shared with lbd-ui-board
 GFX_SOURCES = $(DIR_GFX)/canvas.cpp $(DIR_GFX)/text.cpp $(DIR_GFX)/widgets.cpp
@@ -43,8 +33,8 @@ CPP_SOURCES = busTrack.cpp $(LIB_SOURCES)
 # Compiler settings
 CC = gcc
 CXX = g++
-CFLAGS = -Wall -O2 -MMD -MP -I$(DIR_CONFIG) -I$(DIR_LCD) -I$(DIR_GUI) -I$(DIR_FONTS) $(HW_CFLAGS)
-CXXFLAGS = -Wall -O2 -MMD -MP -std=c++17 -I$(DIR_CONFIG) -I$(DIR_LCD) -I$(DIR_GUI) -I$(DIR_FONTS) $(HW_CXXFLAGS)
+CFLAGS = -Wall -O2 -MMD -MP -I$(DIR_CONFIG) -I$(DIR_LCD) $(HW_CFLAGS)
+CXXFLAGS = -Wall -O2 -MMD -MP -std=c++17 -I$(DIR_CONFIG) -I$(DIR_LCD) $(HW_CXXFLAGS)
 
 # Output
 TARGET = busTrack
@@ -81,9 +71,8 @@ test: $(TESTS)
 
 clean:
 	rm -f $(TARGET) $(TESTS) *.o *.d tests/*.o tests/*.d $(DIR_GFX)/*.o $(DIR_GFX)/*.d \
-	      $(DIR_LCD)/*.o $(DIR_GUI)/*.o $(DIR_CONFIG)/*.o $(DIR_FONTS)/*.o \
-	      $(DIR_LCD)/*.d $(DIR_GUI)/*.d $(DIR_CONFIG)/*.d $(DIR_FONTS)/*.d
+	      $(DIR_LCD)/*.o $(DIR_CONFIG)/*.o $(DIR_LCD)/*.d $(DIR_CONFIG)/*.d
 
 .PHONY: all test clean
 
--include $(wildcard *.d tests/*.d $(DIR_GFX)/*.d) $(wildcard $(DIR_GUI)/*.d $(DIR_FONTS)/*.d)
+-include $(wildcard *.d tests/*.d $(DIR_GFX)/*.d)
