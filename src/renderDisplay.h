@@ -3,6 +3,7 @@
 #include <ctime>
 
 #include "departures.h"
+#include "hidden_routes.h"  // RouteSet, the hidden routes
 #include "screens.h"  // StopDirection
 #include "../gfx/canvas.h"
 
@@ -23,4 +24,5 @@ void flushToLcd(const gfx::Canvas &frame);
 // age come from board.fetchedAt, and `now` is the reference for "how old is it",
 // so snapshots are repeatable when --now is given. `dir` selects the direction
 // button that is filled.
-void drawMainScreen(gfx::Canvas &frame, const StopBoard &board, time_t now, StopDirection dir);
+void drawMainScreen(gfx::Canvas &frame, const StopBoard &board, time_t now, StopDirection dir,
+                    const RouteSet &hidden);   // hidden: routes left out of the rows (chips stay)

@@ -13,11 +13,11 @@ StopDirection lookupDir(const UiState &st) {
 }
 
 // Start a lookup of stops in direction d; when it finishes, go to target.
-Effect startLookup(UiState &st, StopDirection d, Screen target) {
+Effect startLookup(UiState &st, StopDirection d, Screen target, bool pair = false) {
     st.dir = d;
     st.target = target;
     st.screen = Screen::Loading;
-    return Effect{Effect::Lookup, d, -1};
+    return Effect{Effect::Lookup, d, -1, pair};
 }
 
 // Refresh the board, or look the stops up again when the stop list is what failed.
@@ -37,21 +37,29 @@ Effect toError(UiState &st, ErrorReason r) {
 
 } // namespace
 
-int listHits(Screen s, int stopCount, Hit *out, int max) {
+int listHits(const UiState &st, Hit *out, int max) {
     int n = 0;
     auto add = [&](Rect r, Action a, int arg) {
         if (n < max) out[n] = Hit{r, a, arg};
         ++n;
     };
-    switch (s) {
-    case Screen::Board:
+    switch (st.screen) {
+    case Screen::Board: {
         add(kHeaderBar, Action::OpenStopList, 0);
         add(kBoardInto, Action::PickInto, 0);
         add(kBoardOut, Action::PickOut, 0);
+        const int chips = st.chipCount < kMaxChips ? st.chipCount : kMaxChips;
+        for (int i = 0; i < chips; ++i) add(chipRect(i), Action::ToggleRoute, i);
+        const int rows = st.rowCount < kBoardMaxRows ? st.rowCount : kBoardMaxRows;
+        for (int i = 0; i < rows; ++i) add(boardRow(i, st.rowsTop), Action::OpenDetail, i);
+        break;
+    }
+    case Screen::BusDetail:
+        add(kBackBtn, Action::Back, 0);
         break;
     case Screen::StopList: {
         add(kBackBtn, Action::Back, 0);
-        int rows = stopCount < kMaxStopRows ? stopCount : kMaxStopRows;
+        const int rows = st.stopCount < kMaxStopRows ? st.stopCount : kMaxStopRows;
         for (int i = 0; i < rows; ++i) add(stopRow(i), Action::PickStop, i);
         break;
     }
@@ -71,9 +79,9 @@ int listHits(Screen s, int stopCount, Hit *out, int max) {
     return n < max ? n : max;
 }
 
-Action hitTest(Screen s, int stopCount, int x, int y, int &arg) {
-    Hit hits[kMaxStopRows + 3];
-    int n = listHits(s, stopCount, hits, kMaxStopRows + 3);
+Action hitTest(const UiState &st, int x, int y, int &arg) {
+    Hit hits[kMaxChips + kBoardMaxRows + 4];
+    const int n = listHits(st, hits, kMaxChips + kBoardMaxRows + 4);
     for (int i = 0; i < n; ++i) {
         if (hits[i].rect.contains(x, y)) {
             arg = hits[i].arg;
@@ -90,8 +98,22 @@ Effect step(UiState &st, Action a, int arg) {
             st.prev = Screen::Board;
             return startLookup(st, lookupDir(st), Screen::StopList);
         }
-        if (a == Action::PickInto) return startLookup(st, StopDirection::Into, Screen::Board);
-        if (a == Action::PickOut)  return startLookup(st, StopDirection::Out, Screen::Board);
+        // Into/Out keep the stop on screen: the lookup pairs it with its other side
+        if (a == Action::PickInto) return startLookup(st, StopDirection::Into, Screen::Board, true);
+        if (a == Action::PickOut)  return startLookup(st, StopDirection::Out, Screen::Board, true);
+        if (a == Action::ToggleRoute && arg >= 0) return Effect{Effect::ToggleRoute, StopDirection::None, arg};
+        if (a == Action::OpenDetail && arg >= 0 && arg < st.rowCount) {
+            st.prev = Screen::Board;
+            st.detailRow = arg;
+            st.screen = Screen::BusDetail;
+        }
+        break;
+
+    case Screen::BusDetail:
+        if (a == Action::Back) {
+            st.screen = st.prev;
+            st.detailRow = -1;
+        }
         break;
 
     case Screen::Error:
@@ -150,7 +172,7 @@ Effect onLookup(UiState &st, bool ok, int count) {
     st.stopCount = count;
     st.reason = ErrorReason::None;
     if (st.target == Screen::Board) {
-        // Direction button: show the nearest stop that way
+        // Direction button: show the stop on that side (the loop picks which one)
         st.screen = Screen::Board;
         return Effect{Effect::ShowStop, StopDirection::None, 0};
     }
@@ -185,8 +207,14 @@ Effect onMinute(UiState &st) {
     return refresh(st);
 }
 
+Effect onDetailTick(UiState &st) {
+    if (st.screen != Screen::BusDetail) return Effect{};
+    return Effect{Effect::FetchBoard, StopDirection::None, -1};
+}
+
 Effect onIdle(UiState &st) {
-    if (!isBoardLike(st.screen)) return Effect{};   // the stop list stays up until the user leaves it
+    // The stop list stays up until the user leaves it; the bus detail sleeps like the board
+    if (!isBoardLike(st.screen) && st.screen != Screen::BusDetail) return Effect{};
     st.screen = Screen::Asleep;
     return Effect{Effect::Sleep, StopDirection::None, -1};
 }

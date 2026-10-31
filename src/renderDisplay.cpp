@@ -200,8 +200,8 @@ void drawStatusBlock(gfx::Canvas &c, int top, int bottom, const std::string &tit
 
 // The alert banner: a count, the first notice's text, a chevron to open the detail
 void drawAlertBanner(gfx::Canvas &c, const StopBoard &board) {
-    c.fillRect(Rect{0, kAlertTop, SCREEN_W, NOTICE_H}, ALERT_BG);
-    const int cy = kAlertTop + NOTICE_H / 2;
+    c.fillRect(Rect{0, kBoardAlertTop, SCREEN_W, NOTICE_H}, ALERT_BG);
+    const int cy = kBoardAlertTop + NOTICE_H / 2;
     c.fillRoundRect(Rect{MARGIN, cy - 7, 14, 14}, 7, ALERT_FG);        // info circle
     c.fillRect(Rect{MARGIN + 6, cy - 3, 2, 5}, BG);                     // "i" stem
     c.fillRect(Rect{MARGIN + 6, cy - 5, 2, 2}, BG);                     // "i" dot
@@ -209,7 +209,7 @@ void drawAlertBanner(gfx::Canvas &c, const StopBoard &board) {
     const size_t n = board.notices.size();
     std::string head = std::to_string(n) + (n == 1 ? " active alert" : " active alerts");
     const FontFace &f = F::kSemiBold13;
-    const int base = gfx::centredBaseline(kAlertTop, NOTICE_H, f);
+    const int base = gfx::centredBaseline(kBoardAlertTop, NOTICE_H, f);
     gfx::drawText(c, f, MARGIN + 20, base, head, TEXT);
     const int x = MARGIN + 20 + gfx::textWidth(f, head) + 8;
     const int maxW = SCREEN_W - 28 - x;
@@ -221,39 +221,46 @@ void drawAlertBanner(gfx::Canvas &c, const StopBoard &board) {
 
 // Route chips: each service at this stop, in the order they first appear. A chevron
 // stands in for the rest when they do not fit.
-void drawChips(gfx::Canvas &c, const StopBoard &board) {
-    std::vector<std::string> services;
-    for (const auto &d : board.departures)
-        if (d.hasMinutes && std::find(services.begin(), services.end(), d.service) == services.end())
-            services.push_back(d.service);
-
+// Each chip is a fixed rect (chipRect), the same one the touch code uses. A hidden
+// route is outlined and struck through, so tapping it shows it again.
+void drawChips(gfx::Canvas &c, const StopBoard &board, const RouteSet &hidden) {
+    const std::vector<std::string> services = boardRoutes(board);
     const FontFace &f = F::kSemiBold15;
-    const int limit = SCREEN_W - MARGIN - 14;  // leave room for the chevron
-    int x = MARGIN;
-    for (const auto &s : services) {
-        const int w = std::max(CHIP_MIN_W, gfx::textWidth(f, s) + 12);
-        if (x + w > limit) {
-            gfx::drawChevron(c, SCREEN_W - MARGIN - 4, kChipsTop + CHIP_H / 2, TEXT_MUTED, true);
-            break;
+    const int shown = std::min(static_cast<int>(services.size()), kMaxChips);
+    for (int i = 0; i < shown; ++i) {
+        const std::string &s = services[i];
+        const ::Rect cr = chipRect(i);
+        const gfx::Rect r{cr.x, cr.y, cr.w, cr.h};
+        if (hidden.count(s)) {
+            c.fillRoundRect(r, 6, TEXT_MUTED);                                  // grey outline...
+            c.fillRoundRect(gfx::Rect{r.x + 1, r.y + 1, r.w - 2, r.h - 2}, 5, BG);   // ...white inside
+            gfx::drawTextIn(c, f, r, gfx::centredBaseline(r.y, r.h, f), gfx::Align::Center, s, TEXT_MUTED);
+            c.line(r.x + 6, r.y + r.h / 2, r.x + r.w - 6, r.y + r.h / 2, TEXT_MUTED);   // struck through
+        } else {
+            gfx::drawRoutePill(c, r, s, routeColour(s), f);
         }
-        gfx::drawRoutePill(c, Rect{x, kChipsTop, w, CHIP_H}, s, routeColour(s), f);
-        x += w + 6;
     }
 }
 
 // "Upcoming departures" with a maroon underline and a full-width rule
-void drawSectionLabel(gfx::Canvas &c) {
+void drawSectionLabel(gfx::Canvas &c, int hiddenCount) {
     const FontFace &f = F::kRegular13;
-    const char *label = "Upcoming departures";
-    const int base = gfx::centredBaseline(kSectionTop, 24, f);
+    const std::string label = "Upcoming departures";
+    const int base = gfx::centredBaseline(kBoardSectionTop, 24, f);
     gfx::drawText(c, f, MARGIN, base, label, TEXT_MUTED);
-    c.fillRect(Rect{MARGIN, kSectionTop + 21, gfx::textWidth(f, label), 2}, ACCENT);
-    c.hline(0, SCREEN_W - 1, kSectionTop + 23, DIVIDER);
+    c.fillRect(Rect{MARGIN, kBoardSectionTop + 21, gfx::textWidth(f, label), 2}, ACCENT);
+    if (hiddenCount > 0) {
+        const std::string note = " - " + std::to_string(hiddenCount) +
+                                 (hiddenCount == 1 ? " route hidden" : " routes hidden");
+        gfx::drawText(c, f, MARGIN + gfx::textWidth(f, label), base, note, TEXT_MUTED);
+    }
+    c.hline(0, SCREEN_W - 1, kBoardSectionTop + 23, DIVIDER);
 }
 
 }  // namespace
 
-void drawMainScreen(gfx::Canvas &c, const StopBoard &board, time_t now, StopDirection dir) {
+void drawMainScreen(gfx::Canvas &c, const StopBoard &board, time_t now, StopDirection dir,
+                    const RouteSet &hidden) {
     c.clear(BG);
 
     drawBoardStatus(c, board, now);
@@ -267,21 +274,23 @@ void drawMainScreen(gfx::Canvas &c, const StopBoard &board, time_t now, StopDire
     gfx::drawButton(c, theme::kDirInto, "Into city", F::kSemiBold15, dir == StopDirection::Into);
     gfx::drawButton(c, theme::kDirOut, "Out of city", F::kSemiBold15, dir == StopDirection::Out);
 
-    drawChips(c, board);
-    drawSectionLabel(c);
+    drawChips(c, board, hidden);
+    int hiddenCount = 0;
+    for (const auto &r : boardRoutes(board)) hiddenCount += hidden.count(r) ? 1 : 0;
+    drawSectionLabel(c, hiddenCount);
 
     const bool hasAlert = !board.notices.empty();
     if (hasAlert) drawAlertBanner(c, board);
-    const int rowsTop = hasAlert ? kRowsTopAlert : kRowsTop;
+    const int rowsTop = boardRowsTopFor(hasAlert);
 
     const bool stale = board.fetchedAt && now - board.fetchedAt >= STALE_DEAD_S &&
                        (board.status == BoardStatus::Ok || board.status == BoardStatus::NoDepartures);
 
-    std::vector<const Departure *> rows;
-    for (const auto &d : board.departures)
-        if (d.hasMinutes) rows.push_back(&d);
+    const std::vector<const Departure *> rows = visibleRows(board, hidden);
 
-    if (rows.empty()) {
+    if (rows.empty() && hiddenCount > 0 && board.status == BoardStatus::Ok) {
+        drawStatusBlock(c, rowsTop, SCREEN_H, "All routes hidden", TEXT, "Tap a route above to show it", false);
+    } else if (rows.empty()) {
         const int bottom = SCREEN_H;
         if (board.status == BoardStatus::Loading) {
             drawStatusBlock(c, rowsTop, bottom, "Loading...", TEXT_MUTED, "", false);
@@ -295,9 +304,9 @@ void drawMainScreen(gfx::Canvas &c, const StopBoard &board, time_t now, StopDire
             drawStatusBlock(c, rowsTop, bottom, "No buses in the next hour", TEXT, "", false);
         }
     } else {
-        const int slots = (SCREEN_H - rowsTop) / ROW_H;
+        const int slots = boardSlotsFor(hasAlert);   // the same count the touch rows use
         const int count = std::min(slots, static_cast<int>(rows.size()));
         for (int i = 0; i < count; ++i)
-            drawRow(c, rowsTop + i * ROW_H, *rows[i], stale);
+            drawRow(c, rowsTop + i * kBoardRowH, *rows[i], stale);
     }
 }
