@@ -59,6 +59,11 @@ void drawStopHeader(Canvas &c, const StopHeaderText &h) {
     const int cy = zone.y + zone.h / 2;
     drawChevron(c, right - 3, cy, TEXT_MUTED, true);
     right -= 14;
+    // The explicit affordance: the header opens the stop list
+    const FontFace &hf = F::kSemiBold13;
+    drawTextIn(c, hf, Rect{0, 0, right + 1, 0}, centredBaseline(zone.y, zone.h, hf), Align::Right,
+               "Change stop", ACCENT);
+    right -= textWidth(hf, "Change stop") + 10;
     if (h.distanceM >= 0) {
         std::string d = h.distanceM < 1000 ? std::to_string(h.distanceM) + "m"
                                            : std::to_string(h.distanceM / 1000) + "." +

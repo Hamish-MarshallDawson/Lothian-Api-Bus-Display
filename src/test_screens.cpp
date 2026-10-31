@@ -49,13 +49,18 @@ static void testHitTest() {
     CHECK(hitTest(Screen::Board, 0, 160, 200, arg) == Action::None);   // a stop row, not a button
     CHECK(hitTest(Screen::Board, 0, 160, 150, arg) == Action::None);
 
-    // Stop rows start under the header (y 72): row 2 is y 184..239; rows past stopCount do nothing
+    // Stop rows are 64 px from y 72: row 2 is y 200..263; rows past stopCount do nothing
     CHECK(hitTest(Screen::StopList, 3, 100, 200, arg) == Action::PickStop && arg == 2);
     CHECK(hitTest(Screen::StopList, 3, 100, 340, arg) == Action::None);
-    CHECK(hitTest(Screen::StopList, 9, 100, 72 + 56 * 6 + 5, arg) == Action::PickStop && arg == 6);
-    CHECK(hitTest(Screen::StopList, 9, 100, 72 + 56 * 7 + 5, arg) == Action::None);  // only 7 rows
+    CHECK(hitTest(Screen::StopList, 9, 100, 72 + 64 * 5 + 5, arg) == Action::PickStop && arg == 5);
+    CHECK(hitTest(Screen::StopList, 9, 100, 72 + 64 * 6 + 5, arg) == Action::None);  // only 6 rows
     CHECK(hitTest(Screen::StopList, 9, 20, 40, arg) == Action::Back);
+    CHECK(hitTest(Screen::StopList, 9, 110, 60, arg) == Action::Back);   // whole left corner
+    CHECK(hitTest(Screen::StopList, 9, 20, 10, arg) == Action::Back);    // status bar too
+    CHECK(hitTest(Screen::StopList, 9, 200, 40, arg) == Action::None);   // title is not a button
 
+    CHECK(hitTest(Screen::Error, 0, 20, 40, arg) == Action::Back);
+    CHECK(hitTest(Screen::Empty, 0, 20, 40, arg) == Action::Back);
     CHECK(hitTest(Screen::Error, 0, 160, 360, arg) == Action::Retry);
     CHECK(hitTest(Screen::Error, 0, 160, 430, arg) == Action::Choose);
     CHECK(hitTest(Screen::Asleep, 0, 5, 470, arg) == Action::Wake);
@@ -143,6 +148,12 @@ static void testFlow() {
     CHECK(st.screen == Screen::Empty);
     e = onBoard(st, BoardStatus::NetworkError);
     CHECK(st.screen == Screen::Error && st.reason == ErrorReason::NoNetwork);
+
+    // Back on an error goes to the board, with no fetch; then the board is shown again
+    e = step(st, Action::Back, 0);
+    CHECK(st.screen == Screen::Board && e.kind == Effect::None);
+    onBoard(st, BoardStatus::NetworkError);
+    CHECK(st.screen == Screen::Error);
 
     // Choose from an error opens the stop list; Back returns to the error
     e = step(st, Action::Choose, 0);

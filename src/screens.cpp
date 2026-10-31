@@ -57,6 +57,7 @@ int listHits(Screen s, int stopCount, Hit *out, int max) {
     }
     case Screen::Error:
     case Screen::Empty:
+        add(kBackBtn, Action::Back, 0);     // back to the board, no fetch
         add(kRetryBtn, Action::Retry, 0);
         add(kChooseBtn, Action::Choose, 0);
         break;
@@ -95,6 +96,11 @@ Effect step(UiState &st, Action a, int arg) {
 
     case Screen::Error:
     case Screen::Empty:
+        if (a == Action::Back) {
+            st.screen = Screen::Board;
+            st.reason = ErrorReason::None;
+            return Effect{};
+        }
         if (a == Action::Retry) return refresh(st);
         if (a == Action::Choose) {
             st.prev = st.screen;

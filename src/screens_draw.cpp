@@ -36,6 +36,23 @@ void statusBar(Canvas &c, time_t now, const std::string &state, Color ink) {
     gfx::drawStatusBar(c, gfx::StatusBarText{clockText(now), state, ink, false});
 }
 
+// Header band: a bold maroon "<" with the word "Back" on the left (the whole left
+// corner is the tap zone, kBackBtn), and the title centred across the screen.
+void header(Canvas &c, const std::string &title, bool back) {
+    const int y = kHeaderBar.y, h = kHeaderBar.h;
+    if (back) {
+        // two strokes for weight, so the chevron reads from across the room
+        gfx::drawChevron(c, 22, y + h / 2, theme::ACCENT, false);
+        gfx::drawChevron(c, 23, y + h / 2, theme::ACCENT, false);
+        gfx::drawTextIn(c, F::kSemiBold16, GRect{36, y, 70, h},
+                        centreBaseline(y, h, F::kSemiBold16), gfx::Align::Left, "Back", theme::ACCENT);
+    }
+    gfx::drawTextIn(c, F::kBold20, GRect{100, y, kScreenW - 200, h},
+                    centreBaseline(y, h, F::kBold20), gfx::Align::Center,
+                    gfx::fitText(F::kBold20, title, kScreenW - 200), theme::TEXT);
+    c.hline(0, kScreenW - 1, y + h - 1, theme::DIVIDER);
+}
+
 void centredLine(Canvas &c, int y, const FontFace &f, const std::string &s, Color fg) {
     gfx::drawTextIn(c, f, GRect{0, y - f.ascent, kScreenW, f.ascent + f.descent}, y,
                     gfx::Align::Center, s, fg);
@@ -62,6 +79,7 @@ void messageScreen(Canvas &c, time_t now, const std::string &glyph, const std::s
                    const std::string &state, Color stateInk, const std::string &footer) {
     background(c);
     statusBar(c, now, state, stateInk);
+    header(c, "", true);            // Back to the board, so no error screen is a dead end
     iconCircle(c, 110, glyph);
     centredLine(c, 170, F::kBold22, title, titleColour);
     int y = 196;
@@ -96,8 +114,7 @@ void drawStopListScreen(Canvas &c, const std::string &title, const std::vector<s
                         const std::vector<std::string> &details, time_t now) {
     background(c);
     statusBar(c, now, "", theme::TEXT);
-    gfx::drawScreenHeader(c, title, true);
-    c.hline(0, kScreenW - 1, kHeaderBar.y + kHeaderBar.h - 1, theme::DIVIDER);
+    header(c, title, true);
     if (names.empty()) {
         centredLine(c, 200, F::kRegular17, "No stops found", theme::ALERT);
         return;
@@ -106,11 +123,11 @@ void drawStopListScreen(Canvas &c, const std::string &title, const std::vector<s
     for (int i = 0; i < rows; ++i) {
         const Rect r = stopRow(i);
         gfx::drawStopIcon(c, 12, r.y + (r.h - 22) / 2);
-        gfx::drawTextIn(c, F::kSemiBold16, GRect{40, r.y, 240, r.h / 2 + 4},
-                        r.y + 24, gfx::Align::Left,
-                        gfx::fitText(F::kSemiBold16, names[i], 240), theme::TEXT);
+        gfx::drawTextIn(c, F::kBold20, GRect{40, r.y, 250, r.h / 2 + 6},
+                        r.y + 28, gfx::Align::Left,
+                        gfx::fitText(F::kBold20, names[i], 250), theme::TEXT);
         if (i < static_cast<int>(details.size()) && !details[i].empty()) {
-            gfx::drawText(c, F::kRegular13, 40, r.y + 42, details[i], theme::TEXT_MUTED);
+            gfx::drawText(c, F::kRegular15, 40, r.y + 51, details[i], theme::TEXT_MUTED);
         }
         gfx::drawChevron(c, 304, r.y + r.h / 2, theme::TEXT_MUTED, true);
         c.hline(12, kScreenW - 13, r.y + r.h - 1, theme::DIVIDER);

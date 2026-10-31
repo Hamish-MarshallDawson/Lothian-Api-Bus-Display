@@ -41,12 +41,13 @@ constexpr Rect kBoardInto{theme::kDirIntoZone.x, theme::kDirIntoZone.y,
                           theme::kDirIntoZone.w, theme::kDirIntoZone.h};  // board: into city
 constexpr Rect kBoardOut{theme::kDirOutZone.x, theme::kDirOutZone.y,
                          theme::kDirOutZone.w, theme::kDirOutZone.h};     // board: out of city
-constexpr Rect kBackBtn{0, 24, 48, 48};           // "<" back chevron in the header, 48x48 zone
+// Back: the whole left part of the top chrome, status bar included, so it is easy to hit.
+constexpr Rect kBackBtn{0, 0, 120, 72};
 constexpr Rect kRetryBtn{16, 336, 288, 56};
 constexpr Rect kChooseBtn{16, 408, 288, 56};
 constexpr int kStopRowsY = 72;
-constexpr int kStopRowH = 56;
-constexpr int kMaxStopRows = 7;
+constexpr int kStopRowH = 64;
+constexpr int kMaxStopRows = 6;   // (480 - 72) / 64 rows fit
 constexpr Rect stopRow(int i) { return Rect{0, kStopRowsY + kStopRowH * i, 320, kStopRowH}; }
 
 struct Hit { Rect rect; Action action; int arg; };

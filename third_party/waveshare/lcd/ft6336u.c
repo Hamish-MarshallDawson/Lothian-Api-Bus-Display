@@ -30,7 +30,9 @@ bool get_touch_data(touch_data_t *touch_data) {
   ft6336u_read(FT6336U_TOUCH_XH_REG, buff, touch_num * 6);
 
   for (uint16_t i = 0; i < touch_num; i++) {
-    touch_data->coords[i].x = 319 -( (((uint16_t)buff[(i * 6) + 0] & 0x0f) << 8) + buff[(i * 6) + 1]);
+    // Not mirrored: the frame is drawn as the person sees it and flushToLcd flips the
+    // panel, so touch x is already in frame space. (Was 319 - raw, for the old mirrored draw.)
+    touch_data->coords[i].x = (((uint16_t)buff[(i * 6) + 0] & 0x0f) << 8) + buff[(i * 6) + 1];
     touch_data->coords[i].y = (((uint16_t)buff[(i * 6) + 2] & 0x0f) << 8) + buff[(i * 6) + 3];
   }
   return true;
