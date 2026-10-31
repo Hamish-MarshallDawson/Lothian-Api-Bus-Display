@@ -5,6 +5,8 @@
 //   - geocoded addresses: kept for the life of the process
 //   - the stop list (GetActiveStops): once per local day. If today's download
 //     fails, yesterday's list is kept and retried after 10 minutes.
+//   - direction per stop (from timetables): once per local day. Stops that had
+//     no timetable answer are retried after 10 minutes.
 //   - grouped picker results: per address, count and day
 
 #include <algorithm>
@@ -20,8 +22,10 @@
 
 #include "apiHttp.h"
 #include "busStopInfo.h"
+#include "direction.h"
 #include "openmappull.h"
 #include "settings.h"
+#include "timetables.h"
 
 using json = nlohmann::json;
 
@@ -52,20 +56,10 @@ static double jnum(const json &o, const char *key) {
     return (it != o.end() && it->is_number()) ? it->get<double>() : 0.0;
 }
 
-// Haversine distance in metres
-static double haversine(double lat1, double lon1, double lat2, double lon2) {
-    static const double R = 6371000.0;
-    double dLat = (lat2 - lat1) * DEG_TO_RAD;
-    double dLon = (lon2 - lon1) * DEG_TO_RAD;
-    double a = std::sin(dLat / 2) * std::sin(dLat / 2)
-             + std::cos(lat1 * DEG_TO_RAD) * std::cos(lat2 * DEG_TO_RAD) * std::sin(dLon / 2) * std::sin(dLon / 2);
-    return R * 2 * std::atan2(std::sqrt(a), std::sqrt(1 - a));
-}
-
-// Bearing from (lat1,lon1) to (lat2,lon2) in degrees [0,360)
-static double bearingDeg(double lat1, double lon1, double lat2, double lon2) {
-    double phi1 = lat1 * DEG_TO_RAD, phi2 = lat2 * DEG_TO_RAD;
-    double dLon = (lon2 - lon1) * DEG_TO_RAD;
+// Bearing from a to b in degrees [0,360)
+static double bearingDeg(LatLon a, LatLon b) {
+    double phi1 = a.lat * DEG_TO_RAD, phi2 = b.lat * DEG_TO_RAD;
+    double dLon = (b.lon - a.lon) * DEG_TO_RAD;
     double y = std::sin(dLon) * std::cos(phi2);
     double x = std::cos(phi1) * std::sin(phi2) - std::sin(phi1) * std::cos(phi2) * std::cos(dLon);
     return std::fmod(std::atan2(y, x) * RAD_TO_DEG + 360.0, 360.0);
@@ -79,8 +73,6 @@ static double angularDiffDeg(double a, double b) {
 
 // ---------------------------------------------------------------------------
 // Geocoding (Nominatim), cached per address
-
-struct LatLon { double lat, lon; };
 
 static bool geocode(const std::string &address, LatLon &out) {
     static std::map<std::string, LatLon> cache;
@@ -126,10 +118,11 @@ static bool geocode(const std::string &address, LatLon &out) {
 
 struct StopRec {
     std::string atco, naptan, name;
-    double lat, lon;
+    LatLon at;
 };
 
 static std::vector<StopRec> g_stops;
+static std::map<std::string, LatLon> g_stopAt;  // atco -> position, from g_stops
 static std::string g_stopsDate;
 static time_t g_stopsRetryAt = 0;
 
@@ -151,7 +144,7 @@ static bool ensureStops() {
                     auto coord = el.find("coordinate");
                     if (coord == el.end() || !coord->is_object()) continue;
                     StopRec s{jstr(el, "atcocode"), jstr(el, "NAPTAN"), jstr(el, "name"),
-                              jnum(*coord, "latitude"), jnum(*coord, "longitude")};
+                              LatLon{jnum(*coord, "latitude"), jnum(*coord, "longitude")}};
                     if (!s.atco.empty()) fresh.push_back(s);
                 }
             }
@@ -166,10 +159,66 @@ static bool ensureStops() {
         return !g_stops.empty();
     }
     g_stops = fresh;
+    g_stopAt.clear();
+    for (const auto &s : g_stops) g_stopAt[s.atco] = s.at;
     g_stopsDate = today;
     g_stopsRetryAt = 0;
     std::cerr << "stop list: " << g_stops.size() << " stops for " << today << std::endl;
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// Direction of travel, from timetables
+
+struct StopDirection {
+    Direction dir = Direction::Unknown;
+    std::string how;   // "timetable: 3 of 4 trips" or why it is unknown
+};
+
+// Timetable direction for one stop, cached for the day. Looks at up to two
+// services that call at the stop. Unknown means the caller should use the
+// bearing guess.
+static StopDirection timetableDirection(const std::string &atco) {
+    struct Entry { std::string date; StopDirection result; time_t retryAt; bool final; };
+    static std::map<std::string, Entry> cache;
+
+    const std::string today = todayLocal();
+    const time_t now = time(nullptr);
+    auto hit = cache.find(atco);
+    if (hit != cache.end() && hit->second.date == today && (hit->second.final || now < hit->second.retryAt)) {
+        return hit->second.result;
+    }
+
+    StopDirection res;
+    std::vector<ServiceRef> services;
+    bool ok = stopServicesFor(atco, today, services);
+    std::vector<std::vector<std::string>> trips;
+    if (ok) {
+        const size_t checkServices = std::min<size_t>(services.size(), 2);
+        for (size_t i = 0; i < checkServices; ++i) {
+            std::vector<std::vector<std::string>> t;
+            if (tripsFor(services[i], today, t)) trips.insert(trips.end(), t.begin(), t.end());
+            else ok = false;
+        }
+    }
+
+    CoordLookup coordOf = [](const std::string &a, LatLon &out) {
+        auto it = g_stopAt.find(a);
+        if (it == g_stopAt.end()) return false;
+        out = it->second;
+        return true;
+    };
+    DirectionVote vote = voteFromTrips(atco, trips, coordOf);
+    res.dir = vote.dir;
+    res.how = "timetable: " + std::to_string(vote.into) + " into, " + std::to_string(vote.out) + " out";
+    if (res.dir == Direction::Unknown) {
+        res.how = ok ? "no usable trips" : "timetable request failed";
+    }
+
+    // A timetable answer holds for the day. A failure is retried after 10 minutes.
+    Entry e{today, res, now + 600, res.dir != Direction::Unknown || ok};
+    cache[atco] = e;
+    return res;
 }
 
 // ---------------------------------------------------------------------------
@@ -183,7 +232,7 @@ bool getNearestStops(const std::string &address, int maxStops, std::vector<BusSt
     struct Near { const StopRec *s; double dist; };
     std::vector<Near> near;
     near.reserve(g_stops.size());
-    for (const auto &s : g_stops) near.push_back({&s, haversine(here.lat, here.lon, s.lat, s.lon)});
+    for (const auto &s : g_stops) near.push_back({&s, distanceM(here, s.at)});
     std::sort(near.begin(), near.end(), [](const Near &a, const Near &b) { return a.dist < b.dist; });
 
     // Returns up to 2 * maxStops, as before: both directions are chosen from this
@@ -194,14 +243,17 @@ bool getNearestStops(const std::string &address, int maxStops, std::vector<BusSt
         b.stopID = s.atco;
         b.identifier = s.naptan;
         b.stopName = s.name;
-        b.latitude = std::to_string(s.lat);
-        b.longitude = std::to_string(s.lon);
+        b.latitude = std::to_string(s.at.lat);
+        b.longitude = std::to_string(s.at.lon);
         b.destination = s.name;
         outStops.push_back(b);
     }
     return !outStops.empty();
 }
 
+// Into/out-of-city for the picker. Uses timetable direction where the
+// timetables say; otherwise the bearing guess (same side of the centre as the
+// user). Every stop logs which method decided it.
 bool getNearestStopsGrouped(const std::string &address, int perGroup, GroupedStops &out) {
     static std::map<std::string, GroupedStops> cache;  // key: address|count|day
     const std::string key = address + "|" + std::to_string(perGroup) + "|" + todayLocal();
@@ -213,18 +265,28 @@ bool getNearestStopsGrouped(const std::string &address, int perGroup, GroupedSto
     LatLon here;
     if (!geocode(address, here)) return false;
 
-    // Look at a wide pool so both groups can fill up
+    // Nearest stops first; stop as soon as both groups are full
     std::vector<BusStopInfo> pool;
     if (!getNearestStops(address, perGroup * 4, pool)) return false;
 
-    // Heuristic: the Novus stop data has no direction. A stop counts as "into
-    // city" when it lies on the same side of the centre as the user does.
-    const double userBearing = bearingDeg(here.lat, here.lon, CITY_CENTER_LAT(), CITY_CENTER_LON());
+    const double userBearing = bearingDeg(here, LatLon{CITY_CENTER_LAT(), CITY_CENTER_LON()});
     for (const auto &s : pool) {
         if ((int)out.intoCity.size() >= perGroup && (int)out.outOfCity.size() >= perGroup) break;
-        double stopLat = std::stod(s.latitude), stopLon = std::stod(s.longitude);
-        double stopBearing = bearingDeg(stopLat, stopLon, CITY_CENTER_LAT(), CITY_CENTER_LON());
-        bool into = angularDiffDeg(stopBearing, userBearing) <= 90.0;
+
+        LatLon at{std::stod(s.latitude), std::stod(s.longitude)};
+        StopDirection d = timetableDirection(s.stopID);
+        bool into;
+        if (d.dir != Direction::Unknown) {
+            into = d.dir == Direction::Into;
+            std::cerr << "direction " << s.stopID << " " << s.stopName << ": "
+                      << (into ? "into" : "out") << " by " << d.how << std::endl;
+        } else {
+            double stopBearing = bearingDeg(at, LatLon{CITY_CENTER_LAT(), CITY_CENTER_LON()});
+            into = angularDiffDeg(stopBearing, userBearing) <= 90.0;
+            std::cerr << "direction " << s.stopID << " " << s.stopName << ": "
+                      << (into ? "into" : "out") << " by bearing guess (" << d.how << ")" << std::endl;
+        }
+
         auto &group = into ? out.intoCity : out.outOfCity;
         if ((int)group.size() < perGroup) group.push_back(s);
     }

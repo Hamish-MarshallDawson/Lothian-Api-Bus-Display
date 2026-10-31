@@ -1,0 +1,54 @@
+{
+  "date": "2026-10-31",
+  "name": "Hand-made test service 22",
+  "publicservicename": "22",
+  "serviceRef": "",
+  "operator": "LOTH",
+  "directions": [
+    {
+      "direction": "Outbound",
+      "name": "Outbound",
+      "trips": [
+        {
+          "originstop": "TESTW1",
+          "starttime": "08:00",
+          "destinationstop": "TESTC1",
+          "endtime": "08:20",
+          "events": [
+            { "atcocode": "TESTW1", "destination": "Centre", "arrival": "08:00", "departure": "08:00", "timingpoint": true, "cancelled": false },
+            { "atcocode": "TESTW2", "destination": "Centre", "arrival": "08:08", "departure": "08:08", "timingpoint": true, "cancelled": false },
+            { "atcocode": "TESTC1", "destination": "Centre", "arrival": "08:20", "departure": "08:20", "timingpoint": true, "cancelled": false }
+          ]
+        },
+        {
+          "originstop": "TESTW1",
+          "starttime": "09:00",
+          "destinationstop": "TESTC1",
+          "endtime": "09:20",
+          "events": [
+            { "atcocode": "TESTW1", "destination": "Centre", "arrival": "09:00", "departure": "09:00", "timingpoint": true, "cancelled": false },
+            { "atcocode": "TESTW2", "destination": "Centre", "arrival": "09:08", "departure": "09:08", "timingpoint": true, "cancelled": false },
+            { "atcocode": "TESTC1", "destination": "Centre", "arrival": "09:20", "departure": "09:20", "timingpoint": true, "cancelled": false }
+          ]
+        }
+      ]
+    },
+    {
+      "direction": "Inbound",
+      "name": "Inbound",
+      "trips": [
+        {
+          "originstop": "TESTC1",
+          "starttime": "08:30",
+          "destinationstop": "TESTW1",
+          "endtime": "08:50",
+          "events": [
+            { "atcocode": "TESTC1", "destination": "Westside", "arrival": "08:30", "departure": "08:30", "timingpoint": true, "cancelled": false },
+            { "atcocode": "TESTW2", "destination": "Westside", "arrival": "08:40", "departure": "08:40", "timingpoint": true, "cancelled": false },
+            { "atcocode": "TESTW1", "destination": "Westside", "arrival": "08:50", "departure": "08:50", "timingpoint": true, "cancelled": false }
+          ]
+        }
+      ]
+    }
+  ]
+}

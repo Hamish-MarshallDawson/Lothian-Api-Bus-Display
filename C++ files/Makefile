@@ -35,7 +35,7 @@ DIR_GFX = ../gfx
 GFX_SOURCES = $(DIR_GFX)/canvas.cpp $(DIR_GFX)/text.cpp $(DIR_GFX)/widgets.cpp
 
 # Library code shared by busTrack and the tests
-LIB_SOURCES = departures.cpp openmappull.cpp refresh.cpp png_write.cpp renderDisplay.cpp $(GFX_SOURCES)
+LIB_SOURCES = departures.cpp timetables.cpp direction.cpp openmappull.cpp refresh.cpp png_write.cpp renderDisplay.cpp $(GFX_SOURCES)
 CPP_SOURCES = busTrack.cpp $(LIB_SOURCES)
 
 # Compiler settings
@@ -46,7 +46,7 @@ CXXFLAGS = -Wall -O2 -MMD -MP -std=c++17 -I$(DIR_CONFIG) -I$(DIR_LCD) -I$(DIR_GU
 
 # Output
 TARGET = busTrack
-TEST = tests/refresh_test
+TESTS = tests/refresh_test tests/direction_test
 
 all: $(TARGET)
 
@@ -54,13 +54,17 @@ all: $(TARGET)
 $(TARGET): $(C_SOURCES:.c=.o) $(CPP_SOURCES:.cpp=.o)
 	$(CXX) $^ -o $@ $(HW_LIBS) -lcurl -lz -lm
 
-# Logic checks that need no display or network: refresh policy and the parser.
-# Run on the Pi from this folder: make test
-$(TEST): tests/refresh_test.o refresh.o departures.o
+# Logic checks that need no display or network: refresh policy, the StopEvents
+# parser and the timetable direction vote. Run on the Pi from this folder: make test
+tests/refresh_test: tests/refresh_test.o refresh.o departures.o
 	$(CXX) $^ -o $@ -lcurl -lm
 
-test: $(TEST)
-	./$(TEST)
+tests/direction_test: tests/direction_test.o direction.o timetables.o
+	$(CXX) $^ -o $@ -lcurl -lm
+
+test: $(TESTS)
+	./tests/refresh_test
+	./tests/direction_test
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -69,7 +73,7 @@ test: $(TEST)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(TARGET) $(TEST) *.o *.d tests/*.o tests/*.d $(DIR_GFX)/*.o $(DIR_GFX)/*.d $(DIR_LCD)/*.o $(DIR_GUI)/*.o $(DIR_CONFIG)/*.o $(DIR_FONTS)/*.o \
+	rm -f $(TARGET) $(TESTS) *.o *.d tests/*.o tests/*.d $(DIR_GFX)/*.o $(DIR_GFX)/*.d $(DIR_LCD)/*.o $(DIR_GUI)/*.o $(DIR_CONFIG)/*.o $(DIR_FONTS)/*.o \
 	      $(DIR_LCD)/*.d $(DIR_GUI)/*.d $(DIR_CONFIG)/*.d $(DIR_FONTS)/*.d
 
 .PHONY: all test clean
