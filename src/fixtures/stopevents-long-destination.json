@@ -1,0 +1,39 @@
+[
+  {
+    "time": "2026-10-31T16:00:00",
+    "atcocode": "7000000003",
+    "name": "Edinburgh Park Station Interchange Bay Number Twelve",
+    "updatehint": "2026-10-31T16:01:00",
+    "notices": [],
+    "events": [
+      {
+        "operator": "LOTH",
+        "publicservicename": "100",
+        "destination": "Edinburgh Park Station via Gogar Park and Ride and the Airport Terminal Loop",
+        "scheduledeparturetime": "2026-10-31T16:02:00",
+        "departuretime": 120,
+        "status": "",
+        "occupancy": 0,
+        "seatavailability": { "count": 9, "level": "Medium" },
+        "vehicle": { "fleetno": "", "lastupdate": "", "coordinate": { "latitude": 0, "longitude": 0 } },
+        "notices": [],
+        "atcocode": "7000000003",
+        "indicator": "Bay 12"
+      },
+      {
+        "operator": "LOTH",
+        "publicservicename": "Supercalifragilistic",
+        "destination": "Supercalifragilisticexpialidocious Crescent",
+        "scheduledeparturetime": "2026-10-31T16:08:00",
+        "departuretime": null,
+        "status": "",
+        "occupancy": 0,
+        "seatavailability": { "count": 0, "level": "None" },
+        "vehicle": { "fleetno": "", "lastupdate": "", "coordinate": { "latitude": 0, "longitude": 0 } },
+        "notices": [],
+        "atcocode": "7000000003",
+        "indicator": "Bay 12"
+      }
+    ]
+  }
+]

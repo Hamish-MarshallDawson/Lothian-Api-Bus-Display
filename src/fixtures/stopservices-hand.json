@@ -1,0 +1,6 @@
+{
+  "services": [
+    { "publicservicename": "22", "operator": "LOTH", "serviceRef": "" },
+    { "publicservicename": "N22", "operator": "LOTH", "serviceRef": "" }
+  ]
+}

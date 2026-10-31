@@ -1,0 +1,22 @@
+# systemd unit for the Lothian bus display. Install notes: deploy/INSTALL.md
+[Unit]
+Description=Lothian bus departures display
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Runs as the Pi user, who owns the settings file. Adjust if the user differs.
+User=hamis
+Group=hamis
+# BUSTRACKER_KEY, BUS_ADDRESS and the other settings live here, not in this file
+EnvironmentFile=/home/hamis/.config/bustracker/env
+ExecStart=/usr/local/bin/busTrack
+Restart=on-failure
+RestartSec=10
+# Don't restart in a tight loop if the program keeps failing at start-up
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Install]
+WantedBy=multi-user.target

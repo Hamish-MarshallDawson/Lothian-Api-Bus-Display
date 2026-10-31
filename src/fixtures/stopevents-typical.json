@@ -1,0 +1,95 @@
+[
+  {
+    "time": "2026-10-31T16:00:00",
+    "atcocode": "7000000001",
+    "name": "Princes Street",
+    "updatehint": "2026-10-31T16:01:00",
+    "notices": [],
+    "events": [
+      {
+        "operator": "LOTH",
+        "publicservicename": "22",
+        "destination": "Ocean Terminal",
+        "scheduledeparturetime": "2026-10-31T16:02:00",
+        "departuretime": 180,
+        "status": "",
+        "occupancy": 0,
+        "seatavailability": { "count": 14, "level": "High" },
+        "vehicle": { "fleetno": "1234", "lastupdate": "2026-10-31T15:59:40", "coordinate": { "latitude": 55.9522, "longitude": -3.1990 } },
+        "notices": [],
+        "atcocode": "7000000001",
+        "indicator": "Stop F"
+      },
+      {
+        "operator": "LOTH",
+        "publicservicename": "34",
+        "destination": "Gyle Centre",
+        "scheduledeparturetime": "2026-10-31T16:05:00",
+        "departuretime": "2026-10-31T16:07:00",
+        "status": "delayed",
+        "occupancy": 0,
+        "seatavailability": { "count": 3, "level": "Low" },
+        "vehicle": { "fleetno": "2210", "lastupdate": "2026-10-31T15:59:10", "coordinate": { "latitude": 55.9500, "longitude": -3.2100 } },
+        "notices": [],
+        "atcocode": "7000000001",
+        "indicator": "Stop F"
+      },
+      {
+        "operator": "LOTH",
+        "publicservicename": "10",
+        "destination": "Newhaven",
+        "scheduledeparturetime": "2026-10-31T16:09:00",
+        "departuretime": null,
+        "status": "",
+        "occupancy": 0,
+        "seatavailability": { "count": 0, "level": "None" },
+        "vehicle": { "fleetno": "", "lastupdate": "", "coordinate": { "latitude": 0, "longitude": 0 } },
+        "notices": [],
+        "atcocode": "7000000001",
+        "indicator": "Stop F"
+      },
+      {
+        "operator": "LOTH",
+        "publicservicename": "N22",
+        "destination": "Balerno",
+        "scheduledeparturetime": "2026-10-31T16:12:00",
+        "departuretime": "2026-10-31T16:12:00",
+        "status": "",
+        "occupancy": 0,
+        "seatavailability": { "count": 8, "level": "Medium" },
+        "vehicle": { "fleetno": "", "lastupdate": "", "coordinate": { "latitude": 0, "longitude": 0 } },
+        "notices": [],
+        "atcocode": "7000000001",
+        "indicator": "Stop F"
+      },
+      {
+        "operator": "LOTH",
+        "publicservicename": "5",
+        "destination": "Muirhouse",
+        "scheduledeparturetime": "2026-10-31T16:00:30",
+        "departuretime": 0,
+        "status": "",
+        "occupancy": 0,
+        "seatavailability": { "count": 22, "level": "High" },
+        "vehicle": { "fleetno": "", "lastupdate": "", "coordinate": { "latitude": 0, "longitude": 0 } },
+        "notices": [],
+        "atcocode": "7000000001",
+        "indicator": "Stop F"
+      },
+      {
+        "operator": "LOTH",
+        "publicservicename": "16",
+        "destination": "Clermiston Road",
+        "scheduledeparturetime": "2026-10-31T16:20:00",
+        "departuretime": 1260,
+        "status": "",
+        "occupancy": 0,
+        "seatavailability": { "count": 5, "level": "Low" },
+        "vehicle": { "fleetno": "", "lastupdate": "", "coordinate": { "latitude": 0, "longitude": 0 } },
+        "notices": [],
+        "atcocode": "7000000001",
+        "indicator": "Stop F"
+      }
+    ]
+  }
+]

@@ -1,0 +1,11 @@
+Fonts used by the display (third_party/fonts/ and the generated gfx/fonts/nunito_*.h)
+
+Nunito Sans, Copyright 2016 The Nunito Sans Project Authors
+(https://github.com/Fonthausen/NunitoSans). Licensed under the SIL Open Font License 1.1,
+full text in OFL-NunitoSans.txt.
+
+- nunito-sans/NunitoSans-Regular.ttf, NunitoSans-SemiBold.ttf, NunitoSans-Bold.ttf are static
+  instances cut from the variable font (wght 400, 600, 700; wdth 100; opsz 12; YTLC 500). The
+  instances are derived works under the OFL; they do not use a Reserved Font Name.
+- gfx/fonts/nunito_*.h are generated from those files by tools/bake_font.cpp (glyph alpha
+  tables). They are derived works too and carry the same licence.
