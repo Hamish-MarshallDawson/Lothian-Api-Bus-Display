@@ -233,8 +233,20 @@ std::vector<StopBoard> boardsFromMultipleStopEvents(const json &doc,
                                                     const std::vector<std::string> &atcocodes,
                                                     time_t now) {
     std::vector<StopBoard> out(atcocodes.size());
-    // Real reply: {"stops": [...]}. Also accept a bare array.
-    const json &list = (doc.is_object() && doc.contains("stops")) ? doc["stops"] : doc;
+    // Real replies, by how many codes were asked for:
+    //   several codes: {"stops": [...]}
+    //   one code:      a single stop object, the same shape as StopEvents
+    //   (a bare array is also accepted)
+    json single;
+    const json *listPtr = &doc;
+    auto stopsKey = doc.is_object() ? doc.find("stops") : doc.end();
+    if (stopsKey != doc.end() && stopsKey->is_array()) {
+        listPtr = &(*stopsKey);
+    } else if (doc.is_object() && doc.contains("events")) {
+        single = json::array({doc});
+        listPtr = &single;
+    }
+    const json &list = *listPtr;
     for (size_t i = 0; i < atcocodes.size(); ++i) {
         out[i].atcocode = atcocodes[i];
         out[i].fetchedAt = now;

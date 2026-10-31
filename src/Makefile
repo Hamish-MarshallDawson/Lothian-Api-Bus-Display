@@ -61,6 +61,14 @@ tests/live_format_test: tests/live_format_test.o departures.o timetables.o diskc
 $(TEST_SCREENS): test_screens.cpp screens.cpp screens.h departures.h
 	$(CXX) -Wall -Wextra -O1 -std=c++17 test_screens.cpp screens.cpp -o $@
 
+# Dev-only: checks the picker's boards against the live API (needs BUSTRACKER_KEY and
+# BUS_ADDRESS). Not part of make test. Prints no stop names, codes or coordinates.
+picker-live: tests/picker_live
+	./tests/picker_live
+
+tests/picker_live: tests/picker_live.o openmappull.o direction.o timetables.o departures.o diskcache.o refresh.o
+	$(CXX) $^ -o $@ -lcurl -lm
+
 test: $(TESTS)
 	./tests/refresh_test
 	./tests/direction_test
@@ -77,6 +85,6 @@ clean:
 	rm -f $(TARGET) $(TESTS) *.o *.d tests/*.o tests/*.d $(DIR_GFX)/*.o $(DIR_GFX)/*.d \
 	      $(DIR_LCD)/*.o $(DIR_CONFIG)/*.o $(DIR_LCD)/*.d $(DIR_CONFIG)/*.d
 
-.PHONY: all test clean
+.PHONY: all test clean picker-live
 
 -include $(wildcard *.d tests/*.d $(DIR_GFX)/*.d)
