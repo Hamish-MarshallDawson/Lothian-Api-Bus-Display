@@ -193,11 +193,34 @@ static void testFlow() {
     CHECK(e.kind == Effect::Lookup && e.dir == StopDirection::None);
 }
 
+// At startup the board takes the nearest stop's own direction, not a default.
+static void testBootDirection() {
+    UiState into;
+    onBoot(into, true, 8, StopDirection::Into);
+    CHECK(into.screen == Screen::Board && into.dir == StopDirection::Into);
+
+    UiState out;
+    onBoot(out, true, 8, StopDirection::Out);
+    CHECK(out.screen == Screen::Board && out.dir == StopDirection::Out);
+
+    // In neither group: no direction, so neither button is highlighted
+    UiState neither;
+    onBoot(neither, true, 8, StopDirection::None);
+    CHECK(neither.screen == Screen::Board && neither.dir == StopDirection::None);
+
+    // A failed startup clears any direction
+    UiState failed;
+    failed.dir = StopDirection::Into;
+    onBoot(failed, false, 0, StopDirection::Into);
+    CHECK(failed.screen == Screen::Error && failed.dir == StopDirection::None);
+}
+
 int main() {
     testLayout();
     testHitTest();
     testTapTracker();
     testFlow();
+    testBootDirection();
     if (failures) {
         std::fprintf(stderr, "test_screens: %d check(s) failed\n", failures);
         return 1;

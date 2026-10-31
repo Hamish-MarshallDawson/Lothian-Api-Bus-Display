@@ -252,8 +252,9 @@ void drawMainScreen(gfx::Canvas &c, const StopBoard &board, time_t now, StopDire
                                board.indicator, board.distanceFromHomeM};
     gfx::drawStopHeader(c, header);
 
-    // Direction buttons: the selected one filled, the other outlined
-    gfx::drawButton(c, theme::kDirInto, "Into city", F::kSemiBold15, dir != StopDirection::Out);
+    // Direction buttons: the selected one filled, the other outlined. With no direction
+    // (StopDirection::None) neither is filled.
+    gfx::drawButton(c, theme::kDirInto, "Into city", F::kSemiBold15, dir == StopDirection::Into);
     gfx::drawButton(c, theme::kDirOut, "Out of city", F::kSemiBold15, dir == StopDirection::Out);
 
     drawChips(c, board);

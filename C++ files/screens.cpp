@@ -126,10 +126,11 @@ Effect step(UiState &st, Action a, int arg) {
     return Effect{};
 }
 
-Effect onBoot(UiState &st, bool ok, int count) {
+Effect onBoot(UiState &st, bool ok, int count, StopDirection dir) {
     if (ok && count > 0) {
         st.screen = Screen::Board;
         st.stopCount = count;
+        st.dir = dir;   // the nearest stop's own direction; no guessing
         return Effect{Effect::FetchBoard, StopDirection::None, -1};
     }
     st.dir = StopDirection::None;
