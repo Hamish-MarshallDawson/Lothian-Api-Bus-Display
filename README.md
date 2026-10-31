@@ -6,7 +6,7 @@ A Raspberry Pi bus board: live Lothian departures for the stops near home, on a 
   <img src="docs/images/board.png" alt="Departures board for Princes Street, into city" width="240">
   <img src="docs/images/board-hidden.png" alt="Departures board with two routes hidden" width="240">
   <img src="docs/images/stop-list.png" alt="Stop list for the into-city direction" width="240">
-  <img src="docs/images/bus-detail.png" alt="Bus detail: live position on an OpenStreetMap map, 4 minutes late" width="240">
+  <img src="docs/images/bus-detail.png" alt="Bus detail: a live bus approaching Queensferry Street on an OpenStreetMap map, on time" width="240">
 </p>
 <p align="center">
   <img src="docs/images/error.png" alt="No Wi-Fi error screen with retry and choose-stop buttons" width="240">
@@ -106,7 +106,7 @@ The look-ahead (60 minutes) and the maximum number of departures per stop (12) a
 - `--fixture` uses a JSON file in place of the live board. `--now` sets the clock for it. `--age SECS` draws the board as if its data were that old.
 - `--hidden` takes route names separated by commas. `--direction into|out` sets the highlight.
 - `--tiles DIR` gives the map its tiles. Without it, the map draws a plain background.
-- `--row N` with `--live-detail STOP` (development only, uses the live API) draws the bus detail for a real departure at a stop.
+- `--row N` with `--live-detail STOP` (development only, uses the live API) draws the bus detail for the Nth departure with a journey at a stop. The screenshot `docs/images/bus-detail.png` is row 0 at Princes Street (Scott Mon.), taken in the city centre.
 - `--fetch <atcocode>` prints one stop's board from the live API.
 
 **Tests** need no display and no network:
