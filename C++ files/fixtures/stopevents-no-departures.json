@@ -1,0 +1,16 @@
+[
+  {
+    "time": "2026-10-31T23:40:00",
+    "atcocode": "7000000004",
+    "name": "Sighthill Park and Ride (fixture)",
+    "updatehint": "2026-11-01T05:30:00",
+    "notices": [
+      {
+        "notice": "Last service of the night. First service resumes at 05:30.",
+        "publicservicenames": [],
+        "expiry": "2026-11-01T05:30:00"
+      }
+    ],
+    "events": []
+  }
+]
