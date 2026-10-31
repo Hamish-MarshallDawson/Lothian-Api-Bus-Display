@@ -4,13 +4,18 @@
 // Screen state, touch hit areas and transitions for every screen except the
 // main departures board (that is drawMainScreen). Pure logic: no drawing and no
 // hardware, so it builds and tests anywhere (make test).
+//
+// Flow: the board shows the nearest stop. Its Into/Out buttons switch direction
+// straight away (the nearest stop that way). Its header opens the stop list for
+// the current direction. Error and empty screens offer Choose stop, which opens
+// the same list.
 
 #include "departures.h"
 
-enum class Screen { Boot, Board, Direction, Loading, StopList, Error, Empty, Asleep };
+enum class Screen { Boot, Board, Loading, StopList, Error, Empty, Asleep };
 
-// What a tap means. Board's header opens Direction; the rest are per-screen.
-enum class Action { None, OpenDirection, Back, PickInto, PickOut, PickStop, Retry, Choose, Wake };
+// What a tap means, per screen.
+enum class Action { None, OpenStopList, PickInto, PickOut, Back, PickStop, Retry, Choose, Wake };
 
 enum class StopDirection { None, Into, Out };
 
@@ -26,11 +31,11 @@ struct Rect {
 constexpr int kScreenW = 320;
 constexpr int kScreenH = 480;
 constexpr int kMinTouch = 48;          // smallest touch target, either side
-constexpr int kHeaderH = 64;           // theme::HEADER_H, the band every screen header uses
-constexpr Rect kHeaderBar{0, 0, 320, kHeaderH};
-constexpr Rect kBackBtn{0, 0, 80, kHeaderH};
-constexpr Rect kDirInto{16, 96, 288, 96};
-constexpr Rect kDirOut{16, 216, 288, 96};
+constexpr int kHeaderH = 64;           // header band on the stop list and other screens
+constexpr Rect kHeaderBar{0, 0, 320, kHeaderH};   // board: the stop header opens the list
+constexpr Rect kBoardInto{0, 72, 160, 48};        // board: direction buttons, one half each
+constexpr Rect kBoardOut{160, 72, 160, 48};
+constexpr Rect kBackBtn{0, 0, 80, kHeaderH};      // "< Back" in the header
 constexpr Rect kRetryBtn{16, 336, 288, 56};
 constexpr Rect kChooseBtn{16, 408, 288, 56};
 constexpr int kStopRowsY = kHeaderH;
@@ -51,7 +56,7 @@ Action hitTest(Screen s, int stopCount, int x, int y, int &arg);
 struct Effect {
     enum Kind { None, Lookup, FetchBoard, ShowStop, Sleep };
     Kind kind;
-    StopDirection dir;   // Lookup: nearest stops (None) or grouped
+    StopDirection dir;   // Lookup: nearest stops (None, at startup) or grouped by direction
     int index;           // ShowStop: row in the stop list
     Effect(Kind k = None, StopDirection d = StopDirection::None, int i = -1)
         : kind(k), dir(d), index(i) {}
@@ -59,8 +64,9 @@ struct Effect {
 
 struct UiState {
     Screen screen = Screen::Boot;
-    Screen prev = Screen::Board;              // where Back and Choose return to
-    StopDirection dir = StopDirection::None;  // last direction picked
+    Screen prev = Screen::Board;              // where Back on the stop list returns to
+    Screen target = Screen::Board;            // where a finished Loading goes: Board or StopList
+    StopDirection dir = StopDirection::None;  // direction on the board, last picked
     ErrorReason reason = ErrorReason::None;
     int stopCount = 0;                        // rows in the current stop list
 };

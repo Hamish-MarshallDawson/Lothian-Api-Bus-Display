@@ -13,7 +13,6 @@
 
 void drawBootScreen(gfx::Canvas &c, const std::string &status);
 void drawLoadingScreen(gfx::Canvas &c, const std::string &what);
-void drawDirectionScreen(gfx::Canvas &c);
 // names: the stop list for the chosen direction. Shows up to kMaxStopRows.
 void drawStopListScreen(gfx::Canvas &c, const std::string &title, const std::vector<std::string> &names);
 // staleSecs: age of the last good board, or -1. Shown under the message when under 10 minutes.

@@ -165,7 +165,6 @@ static void drawFrame(gfx::Canvas &frame, Screen screen, StopDirection dir, Erro
     case Screen::Board:     drawMainScreen(frame, board, now); break;
     case Screen::Boot:      drawBootScreen(frame, "Finding stops..."); break;
     case Screen::Loading:   drawLoadingScreen(frame, "Finding stops..."); break;
-    case Screen::Direction: drawDirectionScreen(frame); break;
     case Screen::StopList:
         drawStopListScreen(frame, dir == StopDirection::Into ? "Into city" : "Out of city", names);
         break;
@@ -183,7 +182,6 @@ static bool parseScreenName(const std::string &name, Screen &screen, ErrorReason
     if      (name == "main")            screen = Screen::Board;
     else if (name == "boot")            screen = Screen::Boot;
     else if (name == "loading")         screen = Screen::Loading;
-    else if (name == "direction")       screen = Screen::Direction;
     else if (name == "stop-list")       screen = Screen::StopList;
     else if (name == "empty")           screen = Screen::Empty;
     else if (name == "asleep")          screen = Screen::Asleep;

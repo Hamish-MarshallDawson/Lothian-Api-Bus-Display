@@ -88,15 +88,6 @@ void drawLoadingScreen(Canvas &c, const std::string &what) {
     centredLine(c, 230, F::kCondRegular24, what, theme::TEXT);
 }
 
-void drawDirectionScreen(Canvas &c) {
-    background(c);
-    header(c, "Which way?", true);
-    button(c, kDirInto, "INTO CITY", F::kCondBold28, theme::TEXT, theme::HEADER_BG);
-    button(c, kDirOut, "OUT OF CITY", F::kCondBold28, theme::TEXT, theme::HEADER_BG);
-    gfx::drawText(c, F::kCondRegular16, 16, 340, "Stops split by direction of travel",
-                  theme::TEXT_MUTED);
-}
-
 void drawStopListScreen(Canvas &c, const std::string &title, const std::vector<std::string> &names) {
     background(c);
     header(c, title, true);
