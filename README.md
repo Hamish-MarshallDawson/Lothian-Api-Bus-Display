@@ -102,4 +102,4 @@ The display driver and fonts in `C/lib` are Waveshare's and STMicroelectronics' 
 
 ## Licence
 
-Not chosen yet.
+The project code is released under the [MIT License](LICENSE). Vendored third-party code in `C/lib` (Waveshare's driver and the STMicroelectronics fonts) keeps its own copyright and licence notices, which stay in those files.
