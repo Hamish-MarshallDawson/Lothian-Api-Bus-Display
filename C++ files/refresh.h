@@ -40,6 +40,11 @@ public:
     // Clears any board data, and the next update() fetches at once.
     void setStops(const std::vector<std::string> &atcocodes);
 
+    // Makes the next update() fetch at once. Keeps the current departures and the
+    // failure count (so the backoff still applies if this fetch also fails). Use for
+    // Retry, wake from sleep, and re-picking the same stop.
+    void refreshNow() { nextAt_ = 0; }
+
     // Fetches if one is due. Returns true if a request was made.
     bool update(time_t now);
 

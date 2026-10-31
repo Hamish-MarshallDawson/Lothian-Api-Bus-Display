@@ -136,6 +136,21 @@ static void testSetStopsForcesFetch() {
     CHECK(s.calls == 2);
 }
 
+static void testRefreshNowKeepsData() {
+    Script s;
+    s.statuses = {BoardStatus::Ok, BoardStatus::Ok};
+    BoardRefresher r(RefreshPolicy(), s.fetcher());
+    r.setStops({"1"});
+    CHECK(r.update(100));
+    CHECK(!r.update(110));                           // not due: no fetch
+    r.refreshNow();
+    CHECK(r.board(0).departures.size() == 1);        // data kept, not cleared
+    CHECK(r.update(110));                            // fetches at once
+    CHECK(s.calls == 2);
+    CHECK(r.nextFetchAt() == 170);                   // normal schedule resumes
+    CHECK(r.board(0).departures.size() == 1);
+}
+
 static time_t localTime(int y, int mo, int d, int h, int mi) {
     std::tm tm{};
     tm.tm_year = y - 1900;
@@ -170,6 +185,7 @@ int main() {
     testBackoffSequences();
     testSuccessResetsAndKeepsLastGood();
     testSetStopsForcesFetch();
+    testRefreshNowKeepsData();
     testFixtureParse();
     if (failures) {
         std::printf("%d check(s) failed\n", failures);
