@@ -92,6 +92,7 @@ static bool geocode(const std::string &address, LatLon &out) {
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, USER_AGENT().c_str());
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
+    curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");  // decode gzip replies
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
     CURLcode res = curl_easy_perform(curl);
     curl_easy_cleanup(curl);
@@ -143,7 +144,10 @@ static bool ensureStops() {
                 for (const auto &el : *stops) {
                     auto coord = el.find("coordinate");
                     if (coord == el.end() || !coord->is_object()) continue;
-                    StopRec s{jstr(el, "atcocode"), jstr(el, "NAPTAN"), jstr(el, "name"),
+                    // The live key is "NaPTAN"; the spec says "NAPTAN". Take either.
+                    std::string naptan = jstr(el, "NaPTAN");
+                    if (naptan.empty()) naptan = jstr(el, "NAPTAN");
+                    StopRec s{jstr(el, "atcocode"), naptan, jstr(el, "name"),
                               LatLon{jnum(*coord, "latitude"), jnum(*coord, "longitude")}};
                     if (!s.atco.empty()) fresh.push_back(s);
                 }

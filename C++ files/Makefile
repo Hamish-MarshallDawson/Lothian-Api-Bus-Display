@@ -46,7 +46,7 @@ CXXFLAGS = -Wall -O2 -MMD -MP -std=c++17 -I$(DIR_CONFIG) -I$(DIR_LCD) -I$(DIR_GU
 
 # Output
 TARGET = busTrack
-TESTS = tests/refresh_test tests/direction_test
+TESTS = tests/refresh_test tests/direction_test tests/live_format_test
 
 all: $(TARGET)
 
@@ -62,9 +62,13 @@ tests/refresh_test: tests/refresh_test.o refresh.o departures.o
 tests/direction_test: tests/direction_test.o direction.o timetables.o
 	$(CXX) $^ -o $@ -lcurl -lm
 
+tests/live_format_test: tests/live_format_test.o departures.o timetables.o
+	$(CXX) $^ -o $@ -lcurl -lm
+
 test: $(TESTS)
 	./tests/refresh_test
 	./tests/direction_test
+	./tests/live_format_test
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
