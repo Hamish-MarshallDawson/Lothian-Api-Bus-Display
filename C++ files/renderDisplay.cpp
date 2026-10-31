@@ -33,6 +33,7 @@ extern "C" {
 #include "../gfx/fonts/cond_regular_16.h"
 #include "../gfx/fonts/cond_regular_20.h"
 #include "../gfx/fonts/cond_regular_24.h"
+#include "../gfx/fonts/cond_regular_48.h"
 #include "../gfx/text.h"
 #include "../gfx/theme.h"
 #include "../gfx/widgets.h"
@@ -147,8 +148,12 @@ void drawNotice(gfx::Canvas &c, const StopBoard &board) {
                   gfx::fitText(fonts::kCondRegular14, t, SCREEN_W - 2 * MARGIN), NOTICE_FG);
 }
 
+// Baseline that puts a face's cap height (px) centred on centreY
+int capBaseline(int centreY, int capPx) { return centreY + capPx / 2; }
+
 // One departure, 72 px tall, at row top r. See DESIGN.md section 2.2.
 void drawRow(gfx::Canvas &c, int r, const Departure &d, bool stale) {
+    const int cy = r + BADGE_H / 2 + 14;  // badge centre: the row's shared centre line (r+36)
     const bool cancelled = d.cancelled;
     const Color fill = routeColour(d.service);
     Color badge = cancelled ? fadeToBg(fill, 153) : fill;
@@ -160,34 +165,40 @@ void drawRow(gfx::Canvas &c, int r, const Departure &d, bool stale) {
     std::string label = d.service.substr(0, 3);
     Color labelInk = gfx::readableOn(fill);
     if (stale) labelInk = fadeToBg(labelInk, 128);
-    gfx::drawTextIn(c, fonts::kCondBold24, Rect{MARGIN, r + 14, BADGE_W, BADGE_H}, r + 44,
+    gfx::drawTextIn(c, fonts::kCondBold24, Rect{MARGIN, r + 14, BADGE_W, BADGE_H}, capBaseline(cy, 17),
                     gfx::Align::Center, label, labelInk);
 
-    // Destination, up to two lines of 128 px
+    // Destination, up to two lines of 128 px, centred on the badge's centre line
     const FontFace &dest = fonts::kCondRegular20;
     std::vector<std::string> lines = gfx::wrapText(dest, d.destination, 128, 2);
-    const int baselines[2] = {r + 31, r + 55};
+    int baselines[2] = {capBaseline(cy, 15), 0};  // one line
+    if (lines.size() == 2) {                              // two lines as a block, 24 px apart
+        baselines[0] = capBaseline(cy - 12, 15);
+        baselines[1] = baselines[0] + 24;
+    }
     for (size_t i = 0; i < lines.size(); ++i) {
         gfx::drawText(c, dest, 84, baselines[i], lines[i], ink);
         if (cancelled)  // strike-through at mid x-height
             c.hline(84, 84 + gfx::textWidth(dest, lines[i]) - 1, baselines[i] - 6, ink);
     }
 
-    // Time column, right edge at x=308 (minutes: right edge at x=280)
+    // Time column: the number (48 px) is centred on the badge; "min" shares its baseline.
+    // DUE and CANC are centred on the same line, so the column reads level.
     const Rect right{0, 0, SCREEN_W - MARGIN, 0};
     if (cancelled) {
-        gfx::drawTextIn(c, fonts::kCondBold24, right, r + 48, gfx::Align::Right, "CANC",
+        gfx::drawTextIn(c, fonts::kCondBold24, right, capBaseline(cy, 17), gfx::Align::Right, "CANC",
                         stale ? fadeToBg(ALERT, 128) : ALERT);
     } else if (d.minutes <= 0) {
         Color due = d.live ? LIVE : TEXT_MUTED;
         if (stale) due = fadeToBg(due, 128);
-        gfx::drawTextIn(c, fonts::kCondBold28, right, r + 48, gfx::Align::Right, "DUE", due);
+        gfx::drawTextIn(c, fonts::kCondBold28, right, capBaseline(cy, 20), gfx::Align::Right, "DUE", due);
     } else {
         Color num = d.delayed ? WARN : (d.live ? TEXT : TEXT_MUTED);
         if (stale) num = fadeToBg(num, 128);
-        gfx::drawTextIn(c, fonts::kCondRegular16, right, r + 48, gfx::Align::Right, "min", num);
+        const int numBase = capBaseline(cy, 35);  // 48 px digits, cap height 35
+        gfx::drawTextIn(c, fonts::kCondRegular16, right, numBase, gfx::Align::Right, "min", num);
         std::string n = std::to_string(std::min(d.minutes, 99));
-        gfx::drawTextIn(c, fonts::kCondRegular24, Rect{0, 0, 280, 0}, r + 48, gfx::Align::Right, n, num);
+        gfx::drawTextIn(c, fonts::kCondRegular48, Rect{0, 0, 280, 0}, numBase, gfx::Align::Right, n, num);
         if (d.delayed) {
             Color tag = stale ? fadeToBg(WARN, 128) : WARN;
             gfx::drawTextIn(c, fonts::kCondBold12, right, r + 66, gfx::Align::Right, "LATE", tag);
