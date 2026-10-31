@@ -8,6 +8,7 @@
 #include "canvas.h"
 #include "text.h"
 #include "theme.h"
+#include "widgets.h"
 #include "fonts/cond_regular_20.h"
 #include "fonts/cond_bold_24.h"
 #include "fonts/cond_regular_48.h"
@@ -128,6 +129,21 @@ int main() {
         auto broken = wrapText(R20, "Supercalifragilisticexpialidocious", 80, 2);
         CHECK(!broken.empty());
         for (auto& l : broken) CHECK(textWidth(R20, l) <= 80);
+    }
+
+    // drawHeader: 64 px band, divider on its last line, text inside the band, and a
+    // right-hand value that stays on the screen
+    {
+        const int W = 320, H = 480;
+        std::vector<Color> buf(W * H, theme::BG);
+        Canvas c(buf.data(), W, H);
+        drawHeader(c, HeaderText{"Morningside Road", "14:32", "INTO CITY", "CHANGE STOP >"});
+        CHECK(buf[10 * W + 300] == theme::HEADER_BG);
+        CHECK(buf[63 * W + 100] == theme::DIVIDER);
+        CHECK(buf[64 * W + 100] == theme::BG);
+        int ink = 0;
+        for (int y = 0; y < 63; ++y) for (int x = 0; x < W; ++x) ink += (buf[y * W + x] == theme::TEXT);
+        CHECK(ink > 200);
     }
 
     if (failures == 0) std::printf("gfx: all checks passed\n");

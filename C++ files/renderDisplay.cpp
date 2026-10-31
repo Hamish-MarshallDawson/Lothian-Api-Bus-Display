@@ -112,17 +112,26 @@ std::vector<std::string> splitTextToFit(const std::string& text, int maxWidth, c
 }
 
 #ifdef BUSTRACKER_HW
-// Push the Paint buffer to the LCD, one row at a time
-void displayBuffer(UWORD *image) {
+// Push the frame to the LCD, one row at a time. The panel's x axis runs the other
+// way to the frame, so column x of the row goes to panel column W-1-x. Each pixel
+// goes out high byte first, which is what the ST7796 expects.
+void flushToLcd(const gfx::Canvas &frame) {
     st7796_set_windows(0, 0, ST7796_WIDTH - 1, ST7796_HEIGHT - 1);
     LCD_DC_1;
-    for(uint16_t y = 0; y < ST7796_HEIGHT; y++) {
-        DEV_SPI_Write_nByte((uint8_t*)&image[y * ST7796_WIDTH], ST7796_WIDTH * 2);
+    static uint8_t line[ST7796_WIDTH * 2];
+    for (int y = 0; y < ST7796_HEIGHT; y++) {
+        const gfx::Color *row = frame.data() + y * ST7796_WIDTH;
+        for (int x = 0; x < ST7796_WIDTH; x++) {
+            gfx::Color v = row[ST7796_WIDTH - 1 - x];
+            line[2 * x]     = static_cast<uint8_t>(v >> 8);
+            line[2 * x + 1] = static_cast<uint8_t>(v & 0xFF);
+        }
+        DEV_SPI_Write_nByte(line, ST7796_WIDTH * 2);
     }
 }
 #else
 // Snapshot-only build has no LCD. busTrack refuses to run the display loop here.
-void displayBuffer(UWORD *) {}
+void flushToLcd(const gfx::Canvas &) {}
 #endif
 
 void drawDirectionChoiceModal() {
@@ -269,5 +278,5 @@ void drawMainScreen(UWORD *image, const StopBoard &board) {
         yPos += 20;
         busCount++;
     }
-    // The caller pushes the buffer (displayBuffer) or writes it to a PNG.
+    // The caller pushes the frame (flushToLcd) or writes it to a PNG.
 }

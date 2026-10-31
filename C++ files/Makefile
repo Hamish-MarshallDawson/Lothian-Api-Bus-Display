@@ -31,14 +31,17 @@ C_SOURCES = $(DIR_GUI)/GUI_Paint.c \
             $(DIR_FONTS)/font50.c \
             $(HW_SOURCES)
 
-CPP_SOURCES = busTrack.cpp departures.cpp openmappull.cpp png_write.cpp renderDisplay.cpp
+DIR_GFX = ../gfx
+GFX_SOURCES = $(DIR_GFX)/canvas.cpp $(DIR_GFX)/text.cpp $(DIR_GFX)/widgets.cpp
+
+CPP_SOURCES = busTrack.cpp departures.cpp openmappull.cpp png_write.cpp renderDisplay.cpp $(GFX_SOURCES)
 HELPER_SOURCES = openmappull.cpp openmappull_main.cpp
 
 # Compiler settings
 CC = gcc
 CXX = g++
 CFLAGS = -Wall -O2 -MMD -MP -I$(DIR_CONFIG) -I$(DIR_LCD) -I$(DIR_GUI) -I$(DIR_FONTS) $(HW_CFLAGS)
-CXXFLAGS = -Wall -O2 -MMD -MP -std=c++11 -I$(DIR_CONFIG) -I$(DIR_LCD) -I$(DIR_GUI) -I$(DIR_FONTS) $(HW_CXXFLAGS)
+CXXFLAGS = -Wall -O2 -MMD -MP -std=c++17 -I$(DIR_CONFIG) -I$(DIR_LCD) -I$(DIR_GUI) -I$(DIR_FONTS) $(HW_CXXFLAGS)
 
 # Output
 TARGET = busTrack
@@ -60,7 +63,7 @@ openmappull: $(HELPER_SOURCES:.cpp=.o)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(TARGET) openmappull *.o *.d $(DIR_LCD)/*.o $(DIR_GUI)/*.o $(DIR_CONFIG)/*.o $(DIR_FONTS)/*.o \
+	rm -f $(TARGET) openmappull *.o *.d $(DIR_GFX)/*.o $(DIR_GFX)/*.d $(DIR_LCD)/*.o $(DIR_GUI)/*.o $(DIR_CONFIG)/*.o $(DIR_FONTS)/*.o \
 	      $(DIR_LCD)/*.d $(DIR_GUI)/*.d $(DIR_CONFIG)/*.d $(DIR_FONTS)/*.d
 
 .PHONY: all clean
