@@ -117,7 +117,7 @@ make test
 
 Five suites: refresh back-off, direction logic, live response parsing, bus tracking, and the screen state machine with its touch areas. They run on fixtures in `src/fixtures/`. `make picker-live` and `make track-live` are development checks against the live API.
 
-**As a service:** [`deploy/bustracker.service`](deploy/bustracker.service) starts `busTrack` at boot and restarts it after a crash. [`deploy/INSTALL.md`](deploy/INSTALL.md) has the steps. The unit is written and documented. I have not installed it on the Pi.
+**As a service:** [`deploy/bustracker.service`](deploy/bustracker.service) starts `busTrack` at boot and restarts it after a crash. [`deploy/INSTALL.md`](deploy/INSTALL.md) has the steps. It runs as a normal user in the `gpio`, `spi` and `i2c` groups, so no root is needed.
 
 ## Project structure
 
