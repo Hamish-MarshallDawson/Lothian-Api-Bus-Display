@@ -55,7 +55,8 @@ void centredLine(Canvas &c, int y, const FontFace &f, const std::string &s, gfx:
 
 // Title, message and the two recovery buttons. Shared by errors and "no buses".
 void messageScreen(Canvas &c, const std::string &title, gfx::Color titleColour,
-                   const std::string &message, const std::string &footer) {
+                   const std::string &message, const std::string &note,
+                   const std::string &footer) {
     background(c);
     gfx::drawTextIn(c, F::kCondBold28, GRect{16, 64, 288, 40}, 100, gfx::Align::Left,
                     title, titleColour);
@@ -63,6 +64,10 @@ void messageScreen(Canvas &c, const std::string &title, gfx::Color titleColour,
     for (const auto &line : gfx::wrapText(F::kCondRegular20, message, 288, 4)) {
         gfx::drawText(c, F::kCondRegular20, 16, y, line, theme::TEXT);
         y += 26;
+    }
+    if (!note.empty()) {
+        gfx::drawTextIn(c, F::kCondRegular16, GRect{16, 216, 288, 24}, 236, gfx::Align::Left,
+                        note, theme::WARN);
     }
     button(c, kRetryBtn, "RETRY", F::kCondBold24, theme::TEXT, theme::HEADER_BG);
     button(c, kChooseBtn, "CHOOSE STOP", F::kCondBold24, theme::TEXT, theme::HEADER_BG);
@@ -111,7 +116,14 @@ void drawStopListScreen(Canvas &c, const std::string &title, const std::vector<s
                     "Tap a stop to show its board", theme::TEXT_MUTED);
 }
 
-void drawErrorScreen(Canvas &c, ErrorReason r, int retryInSecs) {
+// "Last board 4 min ago", or "" when there is no board or it is 10 minutes old or more.
+static std::string lastBoardNote(long staleSecs) {
+    if (staleSecs < 0 || staleSecs >= 600) return "";
+    if (staleSecs < 60) return "Last board " + std::to_string(staleSecs) + " s ago";
+    return "Last board " + std::to_string(staleSecs / 60) + " min ago";
+}
+
+void drawErrorScreen(Canvas &c, ErrorReason r, int retryInSecs, long staleSecs) {
     std::string title = "NO WI-FI";
     std::string message = "Can't reach Lothian buses. Check the Wi-Fi.";
     switch (r) {
@@ -132,11 +144,11 @@ void drawErrorScreen(Canvas &c, ErrorReason r, int retryInSecs) {
         break;
     }
     const std::string footer = retryInSecs > 0 ? "Retrying in " + std::to_string(retryInSecs) + " s" : "";
-    messageScreen(c, title, theme::ALERT, message, footer);
+    messageScreen(c, title, theme::ALERT, message, lastBoardNote(staleSecs), footer);
 }
 
 void drawEmptyScreen(Canvas &c, const std::string &stopName) {
-    messageScreen(c, "NO BUSES", theme::WARN, "No buses in the next hour.",
+    messageScreen(c, "NO BUSES", theme::WARN, "No buses in the next hour.", "",
                   gfx::fitText(F::kCondRegular16, stopName, 288));
 }
 
