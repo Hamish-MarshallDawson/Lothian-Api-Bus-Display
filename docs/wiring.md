@@ -1,6 +1,6 @@
 # Wiring
 
-BCM numbering. The pin numbers match `C/lib/Config/DEV_Config.h`.
+BCM numbering. The pin numbers match `third_party/waveshare/Config/DEV_Config.h`.
 
 ## Display (SPI)
 

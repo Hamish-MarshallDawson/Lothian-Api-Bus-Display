@@ -1,5 +1,5 @@
 // refresh_test.cpp: checks the refresh backoff policy and the StopEvents parser.
-// Build and run on the Pi from "C++ files/":  make test
+// Build and run on the Pi from "src/":  make test
 // No network: the fetcher is scripted.
 
 #include <cstdio>

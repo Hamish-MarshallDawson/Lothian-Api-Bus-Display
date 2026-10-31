@@ -40,9 +40,9 @@
 
 #ifdef BUSTRACKER_HW
 extern "C" {
-    #include "../C/lib/Config/DEV_Config.h"
-    #include "../C/lib/lcd/st7796.h"
-    #include "../C/lib/lcd/ft6336u.h"
+    #include "../third_party/waveshare/Config/DEV_Config.h"
+    #include "../third_party/waveshare/lcd/st7796.h"
+    #include "../third_party/waveshare/lcd/ft6336u.h"
 }
 #include <chrono>
 #include <wiringPi.h>

@@ -1,6 +1,6 @@
 // live_format_test.cpp: checks the parsers against REAL API replies saved in fixtures/
 // (live-*.json, from city-centre stops), and against the midnight edge case.
-// No network. Run from "C++ files/": make test
+// No network. Run from "src/": make test
 
 #include <cstdio>
 #include <ctime>
