@@ -132,19 +132,29 @@ int main() {
         for (auto& l : broken) CHECK(textWidth(R20, l) <= 80);
     }
 
-    // drawHeader: 64 px band, divider on its last line, text inside the band, and a
-    // right-hand value that stays on the screen
+    // Status bar and stop header: the status bar rule at y=23, the maroon stop icon at
+    // (12, 37), text inside the header band, and nothing drawn outside the bands
     {
         const int W = 320, H = 480;
         std::vector<Color> buf(W * H, theme::BG);
         Canvas c(buf.data(), W, H);
-        drawHeader(c, HeaderText{"Morningside Road", "14:32", "INTO CITY", "CHANGE STOP >"});
-        CHECK(buf[10 * W + 300] == theme::HEADER_BG);
-        CHECK(buf[(theme::HEADER_H - 1) * W + 100] == theme::DIVIDER);
-        CHECK(buf[theme::HEADER_H * W + 100] == theme::BG);
+        drawStatusBar(c, StatusBarText{"16:02", "Live", theme::LIVE, true});
+        CHECK(buf[23 * W + 100] == theme::DIVIDER);
+        drawStopHeader(c, StopHeaderText{"Leith Street", "JB", 630});
+        CHECK(buf[40 * W + 14] == theme::ACCENT);                       // inside the stop icon
+        CHECK(buf[40 * W + 200] == theme::BG);                          // header background
         int ink = 0;
-        for (int y = 0; y < theme::HEADER_H - 1; ++y) for (int x = 0; x < W; ++x) ink += (buf[y * W + x] == theme::TEXT);
+        for (int y = 24; y < 72; ++y) for (int x = 40; x < 260; ++x) ink += (buf[y * W + x] == theme::TEXT);
         CHECK(ink > 50);
+        CHECK(buf[72 * W + 100] == theme::BG);                          // below the header
+    }
+    {
+        // Route pill: fill is the route colour, the number dark or light by contrast
+        const int W = 80, H = 30;
+        std::vector<Color> buf(W * H, theme::BG);
+        Canvas c(buf.data(), W, H);
+        drawRoutePill(c, Rect{0, 0, 40, 18}, "1", rgb(0x98, 0xC8, 0xED), fonts::kBold14);
+        CHECK(buf[2 * W + 2] == rgb(0x98, 0xC8, 0xED));
     }
 
     if (failures == 0) std::printf("gfx: all checks passed\n");

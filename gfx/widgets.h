@@ -47,13 +47,4 @@ void drawLiveIcon(Canvas &c, int x, int cy, Color ink);
 // Chevron, 6x10, centred on (x, cy). right = true points right (">"), false points left ("<").
 void drawChevron(Canvas &c, int x, int cy, Color ink, bool right = true);
 
-// Shared main screen header used by the board until it is rewritten (see drawStopHeader).
-struct HeaderText {
-    std::string title;   // stop name, bold, left
-    std::string right;   // clock or screen-specific value, regular, right
-    std::string kicker;  // small caps line under the title, left
-    std::string hint;    // small caps line, right; "" for none
-};
-void drawHeader(Canvas &c, const HeaderText &h);
-
 }  // namespace gfx

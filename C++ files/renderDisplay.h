@@ -3,6 +3,7 @@
 #include <ctime>
 
 #include "departures.h"
+#include "screens.h"  // StopDirection
 #include "../gfx/canvas.h"
 
 // Panel size. st7796.h defines the same values in the display build.
@@ -20,5 +21,6 @@ void flushToLcd(const gfx::Canvas &frame);
 // Draw the main departures board into the frame. Draws only; the caller decides
 // when to push it to the LCD (flushToLcd) or write a PNG. The clock and the data
 // age come from board.fetchedAt, and `now` is the reference for "how old is it",
-// so snapshots are repeatable when --now is given.
-void drawMainScreen(gfx::Canvas &frame, const StopBoard &board, time_t now);
+// so snapshots are repeatable when --now is given. `dir` selects the direction
+// button that is filled.
+void drawMainScreen(gfx::Canvas &frame, const StopBoard &board, time_t now, StopDirection dir);
