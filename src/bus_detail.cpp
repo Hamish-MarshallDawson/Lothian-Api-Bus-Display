@@ -37,7 +37,9 @@ void drawHeader(Canvas &c, const BusDetailView &v) {
     gfx::drawText(c, f, x, gfx::centredBaseline(24, 48, f), gfx::fitText(f, to, SCREEN_W - MARGIN - x), TEXT);
 }
 
-void drawMapPanel(Canvas &c, const BusDetailView &v, gfx::TileStore &tiles) {
+}  // namespace
+
+gfx::MapScene detailMapScene(const BusDetailView &v) {
     gfx::MapScene scene;
     scene.rect = Rect{0, 72, SCREEN_W, 200};
 
@@ -69,7 +71,13 @@ void drawMapPanel(Canvas &c, const BusDetailView &v, gfx::TileStore &tiles) {
         scene.markers.push_back(gfx::MapMarker{gfx::GeoPoint{v.busLat, v.busLon}, v.routeFill,
                                                rgb(0xFF, 0xFF, 0xFF), 10, label});
     }
-    gfx::drawMap(c, scene, tiles);
+    return scene;
+}
+
+namespace {
+
+void drawMapPanel(Canvas &c, const BusDetailView &v, gfx::TileStore &tiles) {
+    gfx::drawMap(c, detailMapScene(v), tiles);
 }
 
 void drawInfo(Canvas &c, const BusDetailView &v) {
@@ -117,6 +125,9 @@ void drawInfo(Canvas &c, const BusDetailView &v) {
     } else if (v.state == DetailState::Stale) {
         const std::string t = "Last seen " + std::to_string(std::max<long>(0, v.lastUpdateAgeS) / 60) + " min ago";
         gfx::drawTextIn(c, rf, Rect{0, 0, SCREEN_W - MARGIN, 0}, top + 61, gfx::Align::Right, t, TEXT_MUTED);
+    } else if (live && !v.lateTrend.empty()) {
+        // The lateness history: "late 4 -> 6 min over 3 min"
+        gfx::drawTextIn(c, rf, Rect{0, 0, SCREEN_W - MARGIN, 0}, top + 61, gfx::Align::Right, v.lateTrend, TEXT_MUTED);
     } else if (live && v.lastUpdateAgeS >= 0) {
         const std::string t = "Updated " + std::to_string(v.lastUpdateAgeS) + " s ago";
         gfx::drawTextIn(c, rf, Rect{0, 0, SCREEN_W - MARGIN, 0}, top + 61, gfx::Align::Right, t, TEXT_MUTED);
@@ -197,6 +208,16 @@ BusDetailView detailFromTrack(const BusTrack &t, gfx::Color routeFill) {
     v.dueMin = t.dueMin;
     v.stuck = t.stuck;
     v.stuckForS = t.stuckForS;
+    // Lateness over the last 3 minutes of observations, from the earliest point in that window
+    if (t.lateHistory.size() >= 2) {
+        const time_t last = t.lateHistory.back().first;
+        const int lateNow = t.lateHistory.back().second;
+        int lateThen = lateNow;
+        for (auto it = t.lateHistory.rbegin(); it != t.lateHistory.rend() && it->first >= last - 180; ++it)
+            lateThen = it->second;
+        if (lateThen != lateNow)
+            v.lateTrend = "late " + std::to_string(lateThen) + " -> " + std::to_string(lateNow) + " min over 3 min";
+    }
     if (t.state == TrackState::NotStarted && !t.stops.empty()) {
         v.originName = t.stops.front().name;
         v.originTime = t.stops.front().scheduled;

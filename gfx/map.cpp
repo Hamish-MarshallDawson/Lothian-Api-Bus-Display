@@ -92,13 +92,21 @@ GeoPoint geoFromWorld(WorldPoint w, int zoom) {
 TileStore::TileStore(std::string dir) : dir_(std::move(dir)) {}
 
 std::string TileStore::tilePath(const std::string &dir, int z, int x, int y) {
-    return dir + "/" + std::to_string(z) + "/" + std::to_string(x) + "/" + std::to_string(y) + ".png";
+    // The backend's tile cache names: tiles/<z>-<x>-<y>.png
+    return dir + "/tiles/" + std::to_string(z) + "-" + std::to_string(x) + "-" + std::to_string(y) + ".png";
+}
+
+static uint64_t tileKey(int z, int x, int y) {
+    return (static_cast<uint64_t>(z) << 56) | (static_cast<uint64_t>(x) << 28) | static_cast<uint64_t>(y);
+}
+
+void TileStore::forget(int z, int x, int y) {
+    tiles_.erase(tileKey(z, x, y));
 }
 
 const Tile *TileStore::get(int z, int x, int y) {
     if (dir_.empty()) return nullptr;  // no tile folder: never look at the root of the disk
-    const uint64_t key = (static_cast<uint64_t>(z) << 56) | (static_cast<uint64_t>(x) << 28) |
-                         static_cast<uint64_t>(y);
+    const uint64_t key = tileKey(z, x, y);
     auto it = tiles_.find(key);
     if (it != tiles_.end()) return it->second.get();
 
@@ -139,6 +147,25 @@ void fitScene(MapScene &scene, const std::vector<GeoPoint> &points, int padPx, i
             return;
         }
     }
+}
+
+std::vector<TileRef> sceneTiles(const MapScene &scene) {
+    std::vector<TileRef> out;
+    const Rect r = scene.rect;
+    const WorldPoint centreWorld = worldPixel(scene.centre, scene.zoom);
+    const double originX = centreWorld.x - r.w / 2.0;
+    const double originY = centreWorld.y - r.h / 2.0;
+    const int n = 1 << scene.zoom;
+    const int tx0 = static_cast<int>(std::floor(originX / Tile::kSize));
+    const int tx1 = static_cast<int>(std::floor((originX + r.w) / Tile::kSize));
+    const int ty0 = static_cast<int>(std::floor(originY / Tile::kSize));
+    const int ty1 = static_cast<int>(std::floor((originY + r.h) / Tile::kSize));
+    for (int ty = std::max(ty0, 0); ty <= std::min(ty1, n - 1); ++ty)
+        for (int tx = tx0; tx <= tx1; ++tx) {
+            const int wrappedX = ((tx % n) + n) % n;
+            out.push_back(TileRef{scene.zoom, wrappedX, ty});
+        }
+    return out;
 }
 
 void drawMap(Canvas &c, const MapScene &scene, TileStore &tiles) {
