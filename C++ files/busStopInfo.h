@@ -17,6 +17,9 @@ struct BusStopInfo {
     std::string services;
     // Optional numeric orientation/bearing reported by API (degrees 0..360). NaN if not provided.
     double orientation_deg = std::numeric_limits<double>::quiet_NaN();
+    // Straight-line distance from the home address, metres, rounded to 10 m.
+    // -1 when unknown. Set by getNearestStops(); see also stopDistanceFromHomeM().
+    int distance_m = -1;
 
     // Backwards-compatible constructor so existing brace-init lists in
     // `busStopInfo.cpp` continue to work. orientation_deg is optional.

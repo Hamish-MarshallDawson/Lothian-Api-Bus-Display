@@ -39,7 +39,7 @@ CXXFLAGS = -Wall -O2 -MMD -MP -std=c++17 -I$(DIR_CONFIG) -I$(DIR_LCD) $(HW_CXXFL
 # Output
 TARGET = busTrack
 TEST_SCREENS = test_screens
-TESTS = tests/refresh_test tests/direction_test $(TEST_SCREENS)
+TESTS = tests/refresh_test tests/direction_test tests/live_format_test $(TEST_SCREENS)
 
 all: $(TARGET)
 
@@ -54,6 +54,9 @@ tests/refresh_test: tests/refresh_test.o refresh.o departures.o
 tests/direction_test: tests/direction_test.o direction.o timetables.o
 	$(CXX) $^ -o $@ -lcurl -lm
 
+tests/live_format_test: tests/live_format_test.o departures.o timetables.o
+	$(CXX) $^ -o $@ -lcurl -lm
+
 # Screen state, transitions and touch hit areas (screens.cpp, no drawing)
 $(TEST_SCREENS): test_screens.cpp screens.cpp screens.h departures.h
 	$(CXX) -Wall -Wextra -O1 -std=c++17 test_screens.cpp screens.cpp -o $@
@@ -61,6 +64,7 @@ $(TEST_SCREENS): test_screens.cpp screens.cpp screens.h departures.h
 test: $(TESTS)
 	./tests/refresh_test
 	./tests/direction_test
+	./tests/live_format_test
 	./$(TEST_SCREENS)
 
 %.o: %.c

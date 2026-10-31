@@ -103,7 +103,7 @@ bool tripsFor(const ServiceRef &svc, const std::string &date, std::vector<std::v
 
     std::string url = API_BASE() + "/timetables/GetServiceTimetable?publicservicename="
                     + urlEncode(svc.publicservicename) + "&operator=" + urlEncode(svc.opCode)
-                    + "&date=" + date + "&timeFormat=Local";
+                    + "&date=" + date;   // timeFormat is rejected here (400); times are not used anyway
     std::string body;
     long code = 0;
     if (!apiHttpGet(url, body, code)) return false;
