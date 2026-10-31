@@ -42,34 +42,51 @@ void drawHeader(Canvas &c, const BusDetailView &v) {
 gfx::MapScene detailMapScene(const BusDetailView &v) {
     gfx::MapScene scene;
     scene.rect = Rect{0, 72, SCREEN_W, 200};
+    const int n = static_cast<int>(v.stops.size());
+    const bool haveMine = v.myStop >= 0 && v.myStop < n;
 
+    // The window: my stop with three stops before it and two after, along the trip
+    int lo = 0, hi = n - 1;
+    if (haveMine) {
+        lo = std::max(0, v.myStop - 3);
+        hi = std::min(n - 1, v.myStop + 2);
+    }
     std::vector<gfx::GeoPoint> pts;
-    for (const auto &s : v.stops) pts.push_back(gfx::GeoPoint{s.lat, s.lon});
-    if (v.hasBus) pts.push_back(gfx::GeoPoint{v.busLat, v.busLon});
+    for (int i = lo; i <= hi; ++i) pts.push_back(gfx::GeoPoint{v.stops[i].lat, v.stops[i].lon});
     if (pts.empty()) pts.push_back(gfx::GeoPoint{55.9533, -3.1883});  // city centre, nothing else known
-    gfx::fitScene(scene, pts, 18);
 
-    // The trip's route, in order
-    if (v.stops.size() > 1) {
+    // Zoom 14..17, as close as the window allows, my stop kept at the centre if it does not fit
+    gfx::GeoPoint mine = pts.front();
+    if (haveMine) mine = gfx::GeoPoint{v.stops[v.myStop].lat, v.stops[v.myStop].lon};
+    gfx::fitScene(scene, pts, 18, 14, 17, haveMine ? &mine : nullptr);
+
+    // The whole trip's route, in order, thin: it runs off the panel but shows the shape
+    if (n > 1) {
         gfx::MapPath path;
         path.color = ACCENT;
-        path.width = 4;
+        path.width = 3;
         for (const auto &s : v.stops) path.points.push_back(gfx::GeoPoint{s.lat, s.lon});
         scene.paths.push_back(path);
     }
-    // Stops: small rings; mine is larger, the next one filled
-    for (size_t i = 0; i < v.stops.size(); ++i) {
+    // Stop dots only inside the window, about 6 px: mine is ringed, the next one filled
+    for (int i = lo; i <= hi; ++i) {
         const auto &s = v.stops[i];
-        gfx::MapMarker m{gfx::GeoPoint{s.lat, s.lon}, BG, ACCENT, 4, ""};
-        if (static_cast<int>(i) == v.myStop) m = gfx::MapMarker{m.at, BG, ACCENT, 8, ""};
-        if (static_cast<int>(i) == v.nextStop) m = gfx::MapMarker{m.at, ACCENT, ACCENT, 6, ""};
+        gfx::MapMarker m{gfx::GeoPoint{s.lat, s.lon}, BG, ACCENT, 3, ""};
+        if (i == v.myStop) m = gfx::MapMarker{m.at, BG, ACCENT, 5, ""};
+        if (i == v.nextStop) m = gfx::MapMarker{m.at, ACCENT, ACCENT, 4, ""};
         scene.markers.push_back(m);
     }
-    // The bus: route-coloured disc with a white border and its number
+    // The bus, when it is on the panel: route-coloured disc with a white border and its number
     if (v.hasBus) {
         const std::string label = v.service.size() <= 3 ? v.service : "";
         scene.markers.push_back(gfx::MapMarker{gfx::GeoPoint{v.busLat, v.busLon}, v.routeFill,
                                                rgb(0xFF, 0xFF, 0xFF), 10, label});
+        // Off the panel: an edge pill pointing towards it, with the stops away
+        scene.edgeOn = true;
+        scene.edgeTarget = gfx::GeoPoint{v.busLat, v.busLon};
+        const int away = v.stopsAway;
+        scene.edgeLabel = away >= 0 ? std::to_string(away) + (away == 1 ? " stop" : " stops") : "bus";
+        scene.edgeFill = ACCENT;
     }
     return scene;
 }

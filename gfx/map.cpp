@@ -131,8 +131,9 @@ const Tile *TileStore::get(int z, int x, int y) {
 // ---------------------------------------------------------------------------
 // Scene
 
-void fitScene(MapScene &scene, const std::vector<GeoPoint> &points, int padPx, int minZoom, int maxZoom) {
-    if (points.empty()) return;
+bool fitScene(MapScene &scene, const std::vector<GeoPoint> &points, int padPx, int minZoom, int maxZoom,
+              const GeoPoint *focus) {
+    if (points.empty()) return true;
     for (int z = maxZoom; z >= minZoom; --z) {
         double minX = 1e18, minY = 1e18, maxX = -1e18, maxY = -1e18;
         for (const auto &p : points) {
@@ -144,9 +145,12 @@ void fitScene(MapScene &scene, const std::vector<GeoPoint> &points, int padPx, i
         if (fits || z == minZoom) {
             scene.zoom = z;
             scene.centre = geoFromWorld(WorldPoint{(minX + maxX) / 2, (minY + maxY) / 2}, z);
-            return;
+            // Too big for the panel even at the closest allowed zoom: keep the focus point (my stop) in view
+            if (!fits && focus) scene.centre = *focus;
+            return fits;
         }
     }
+    return false;
 }
 
 std::vector<TileRef> sceneTiles(const MapScene &scene) {
@@ -166,6 +170,29 @@ std::vector<TileRef> sceneTiles(const MapScene &scene) {
             out.push_back(TileRef{scene.zoom, wrappedX, ty});
         }
     return out;
+}
+
+// The pill for an off-panel point: where the line from the panel centre to the point
+// leaves the panel (inset 14 px), with the label inside, kept on the panel
+void drawEdgeHint(Canvas &c, Rect r, WorldPoint p, const std::string &label, Color fill) {
+    const double cx = r.x + r.w / 2.0, cy = r.y + r.h / 2.0;
+    const double inset = 14;
+    const double dx = p.x - cx, dy = p.y - cy;
+    const double tx = dx != 0 ? ((dx > 0 ? r.x + r.w - inset : r.x + inset) - cx) / dx : 1e9;
+    const double ty = dy != 0 ? ((dy > 0 ? r.y + r.h - inset : r.y + inset) - cy) / dy : 1e9;
+    const double t = std::min(tx, ty);
+    const double ex = cx + dx * t, ey = cy + dy * t;
+    const FontFace &f = fonts::kSemiBold13;
+    const int w = textWidth(f, label) + 14, h = 20;
+    const int x = std::clamp(static_cast<int>(std::lround(ex - w / 2.0)), r.x + 4, r.x + r.w - w - 4);
+    const int y = std::clamp(static_cast<int>(std::lround(ey - h / 2.0)), r.y + 4, r.y + r.h - h - 4);
+    c.fillRoundRect(Rect{x, y, w, h}, 10, fill);
+    drawTextIn(c, f, Rect{x, y, w, h}, y + h / 2 + 5, Align::Center, label, readableOn(fill));
+}
+
+WorldPoint canvasPoint(const MapScene &scene, GeoPoint p) {
+    const WorldPoint centreWorld = worldPixel(scene.centre, scene.zoom);
+    return Projector{centreWorld, scene.rect, scene.zoom}.toCanvas(p);
 }
 
 void drawMap(Canvas &c, const MapScene &scene, TileStore &tiles) {
@@ -223,6 +250,12 @@ void drawMap(Canvas &c, const MapScene &scene, TileStore &tiles) {
             drawText(c, f, static_cast<int>(std::lround(p.x - tw / 2.0)), base, m.label,
                      readableOn(m.fill));
         }
+    }
+    // A point off the panel: a pill at the panel edge, on the line towards it (drawn before the credit)
+    if (scene.edgeOn) {
+        WorldPoint p = proj.toCanvas(scene.edgeTarget);
+        const bool inside = p.x >= r.x && p.x < r.x + r.w && p.y >= r.y && p.y < r.y + r.h;
+        if (!inside) drawEdgeHint(c, r, p, scene.edgeLabel, scene.edgeFill);
     }
     c.clearClip();
 
