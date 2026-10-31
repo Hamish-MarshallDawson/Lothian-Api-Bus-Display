@@ -22,7 +22,7 @@ endif
 # Source files
 C_SOURCES = $(HW_SOURCES)
 
-# Anti-aliased canvas, baked fonts and widgets (gfx/), shared with lbd-ui-board
+# Anti-aliased canvas, baked fonts, widgets and map (gfx/)
 GFX_SOURCES = $(DIR_GFX)/canvas.cpp $(DIR_GFX)/text.cpp $(DIR_GFX)/widgets.cpp $(DIR_GFX)/map.cpp
 
 # Library code shared by busTrack and the tests
