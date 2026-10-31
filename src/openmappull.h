@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include "busStopInfo.h"
+#include "direction.h"
 
 struct GroupedStops {
     std::vector<BusStopInfo> intoCity;
@@ -23,5 +24,11 @@ int stopDistanceFromHomeM(const std::string &atco);
 
 // New: grouped nearest stops (into/out of city)
 bool getNearestStopsGrouped(const std::string &address, int perGroup, GroupedStops &out);
+
+// The stop on the other side of the road, for Into/Out: among stops within ~300 m
+// of "current" (cached stop list), classified by timetable direction, the nearest
+// one in "want", preferring the same stop name. If "current" is already in "want",
+// returns it. False when nothing is found (the caller falls back and says so).
+bool pairedStop(const BusStopInfo &current, Direction want, BusStopInfo &out);
 
 #endif // OPENMAPPULL_H
