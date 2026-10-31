@@ -6,11 +6,25 @@ namespace {
 
 bool isBoardLike(Screen s) { return s == Screen::Board || s == Screen::Error || s == Screen::Empty; }
 
+// Direction a lookup uses. Before any direction is picked, the header and Choose
+// show the into-city list.
+StopDirection lookupDir(const UiState &st) {
+    return st.dir == StopDirection::None ? StopDirection::Into : st.dir;
+}
+
+// Start a lookup of stops in direction d; when it finishes, go to target.
+Effect startLookup(UiState &st, StopDirection d, Screen target) {
+    st.dir = d;
+    st.target = target;
+    st.screen = Screen::Loading;
+    return Effect{Effect::Lookup, d, -1};
+}
+
 // Refresh the board, or look the stops up again when the stop list is what failed.
 Effect refresh(UiState &st) {
     if (st.reason == ErrorReason::NoStops) {
         st.screen = Screen::Loading;
-        return Effect{Effect::Lookup, st.dir, -1};
+        return Effect{Effect::Lookup, st.dir, -1};   // None at startup: nearest stops
     }
     return Effect{Effect::FetchBoard, StopDirection::None, -1};
 }
@@ -31,12 +45,9 @@ int listHits(Screen s, int stopCount, Hit *out, int max) {
     };
     switch (s) {
     case Screen::Board:
-        add(kHeaderBar, Action::OpenDirection, 0);
-        break;
-    case Screen::Direction:
-        add(kBackBtn, Action::Back, 0);
-        add(kDirInto, Action::PickInto, 0);
-        add(kDirOut, Action::PickOut, 0);
+        add(kHeaderBar, Action::OpenStopList, 0);
+        add(kBoardInto, Action::PickInto, 0);
+        add(kBoardOut, Action::PickOut, 0);
         break;
     case Screen::StopList: {
         add(kBackBtn, Action::Back, 0);
@@ -60,8 +71,8 @@ int listHits(Screen s, int stopCount, Hit *out, int max) {
 }
 
 Action hitTest(Screen s, int stopCount, int x, int y, int &arg) {
-    Hit hits[kMaxStopRows + 2];
-    int n = listHits(s, stopCount, hits, kMaxStopRows + 2);
+    Hit hits[kMaxStopRows + 3];
+    int n = listHits(s, stopCount, hits, kMaxStopRows + 3);
     for (int i = 0; i < n; ++i) {
         if (hits[i].rect.contains(x, y)) {
             arg = hits[i].arg;
@@ -74,10 +85,12 @@ Action hitTest(Screen s, int stopCount, int x, int y, int &arg) {
 Effect step(UiState &st, Action a, int arg) {
     switch (st.screen) {
     case Screen::Board:
-        if (a == Action::OpenDirection) {
+        if (a == Action::OpenStopList) {
             st.prev = Screen::Board;
-            st.screen = Screen::Direction;
+            return startLookup(st, lookupDir(st), Screen::StopList);
         }
+        if (a == Action::PickInto) return startLookup(st, StopDirection::Into, Screen::Board);
+        if (a == Action::PickOut)  return startLookup(st, StopDirection::Out, Screen::Board);
         break;
 
     case Screen::Error:
@@ -85,23 +98,13 @@ Effect step(UiState &st, Action a, int arg) {
         if (a == Action::Retry) return refresh(st);
         if (a == Action::Choose) {
             st.prev = st.screen;
-            st.screen = Screen::Direction;
-        }
-        break;
-
-    case Screen::Direction:
-        if (a == Action::Back) {
-            st.screen = st.prev;
-        } else if (a == Action::PickInto || a == Action::PickOut) {
-            st.dir = a == Action::PickInto ? StopDirection::Into : StopDirection::Out;
-            st.screen = Screen::Loading;
-            return Effect{Effect::Lookup, st.dir, -1};
+            return startLookup(st, lookupDir(st), Screen::StopList);
         }
         break;
 
     case Screen::StopList:
         if (a == Action::Back) {
-            st.screen = Screen::Direction;
+            st.screen = st.prev;
         } else if (a == Action::PickStop && arg >= 0 && arg < st.stopCount) {
             st.screen = Screen::Board;
             st.reason = ErrorReason::None;
@@ -137,9 +140,14 @@ Effect onLookup(UiState &st, bool ok, int count) {
     if (st.screen != Screen::Loading) return Effect{};
     if (!ok) return toError(st, ErrorReason::NoNetwork);
     if (count <= 0) return toError(st, ErrorReason::NoStops);
-    st.screen = Screen::StopList;
     st.stopCount = count;
     st.reason = ErrorReason::None;
+    if (st.target == Screen::Board) {
+        // Direction button: show the nearest stop that way
+        st.screen = Screen::Board;
+        return Effect{Effect::ShowStop, StopDirection::None, 0};
+    }
+    st.screen = Screen::StopList;
     return Effect{};
 }
 
@@ -171,7 +179,7 @@ Effect onMinute(UiState &st) {
 }
 
 Effect onIdle(UiState &st) {
-    if (!isBoardLike(st.screen)) return Effect{};   // menus stay up until the user leaves them
+    if (!isBoardLike(st.screen)) return Effect{};   // the stop list stays up until the user leaves it
     st.screen = Screen::Asleep;
     return Effect{Effect::Sleep, StopDirection::None, -1};
 }

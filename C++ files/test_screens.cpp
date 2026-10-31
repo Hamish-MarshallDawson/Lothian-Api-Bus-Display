@@ -20,8 +20,8 @@ static bool overlaps(const Rect &a, const Rect &b) {
 
 static void testLayout() {
     // Every touch target on every screen: at least 48 px, inside the panel, no overlap.
-    const Screen all[] = {Screen::Board, Screen::Direction, Screen::StopList,
-                          Screen::Error, Screen::Empty, Screen::Asleep};
+    const Screen all[] = {Screen::Board, Screen::StopList, Screen::Error, Screen::Empty,
+                          Screen::Asleep};
     for (Screen s : all) {
         Hit hits[kMaxStopRows + 2];
         int n = listHits(s, kMaxStopRows, hits, kMaxStopRows + 2);
@@ -41,20 +41,20 @@ static void testLayout() {
 
 static void testHitTest() {
     int arg = -1;
-    CHECK(hitTest(Screen::Board, 0, 160, 10, arg) == Action::OpenDirection);
-    CHECK(hitTest(Screen::Board, 0, 160, 200, arg) == Action::None);
+    // Board: header opens the stop list; the two direction buttons sit under it
+    CHECK(hitTest(Screen::Board, 0, 160, 40, arg) == Action::OpenStopList);
+    CHECK(hitTest(Screen::Board, 0, 160, 10, arg) == Action::None);      // status bar
+    CHECK(hitTest(Screen::Board, 0, 60, 96, arg) == Action::PickInto);
+    CHECK(hitTest(Screen::Board, 0, 250, 96, arg) == Action::PickOut);
+    CHECK(hitTest(Screen::Board, 0, 160, 200, arg) == Action::None);   // a stop row, not a button
+    CHECK(hitTest(Screen::Board, 0, 160, 150, arg) == Action::None);
 
-    CHECK(hitTest(Screen::Direction, 0, 160, 150, arg) == Action::PickInto);
-    CHECK(hitTest(Screen::Direction, 0, 160, 260, arg) == Action::PickOut);
-    CHECK(hitTest(Screen::Direction, 0, 160, 200, arg) == Action::None);   // gap between buttons
-    CHECK(hitTest(Screen::Direction, 0, 20, 20, arg) == Action::Back);
-
-    // Stop rows start under the 64 px header: row 2 is y 176..231; rows past stopCount do nothing
-    CHECK(hitTest(Screen::StopList, 3, 100, 180, arg) == Action::PickStop && arg == 2);
+    // Stop rows start under the header (y 72): row 2 is y 184..239; rows past stopCount do nothing
+    CHECK(hitTest(Screen::StopList, 3, 100, 200, arg) == Action::PickStop && arg == 2);
     CHECK(hitTest(Screen::StopList, 3, 100, 340, arg) == Action::None);
-    CHECK(hitTest(Screen::StopList, 9, 100, 64 + 56 * 6 + 5, arg) == Action::PickStop && arg == 6);
-    CHECK(hitTest(Screen::StopList, 9, 100, 64 + 56 * 7 + 5, arg) == Action::None);  // only 7 rows
-    CHECK(hitTest(Screen::StopList, 9, 20, 20, arg) == Action::Back);
+    CHECK(hitTest(Screen::StopList, 9, 100, 72 + 56 * 6 + 5, arg) == Action::PickStop && arg == 6);
+    CHECK(hitTest(Screen::StopList, 9, 100, 72 + 56 * 7 + 5, arg) == Action::None);  // only 7 rows
+    CHECK(hitTest(Screen::StopList, 9, 20, 40, arg) == Action::Back);
 
     CHECK(hitTest(Screen::Error, 0, 160, 360, arg) == Action::Retry);
     CHECK(hitTest(Screen::Error, 0, 160, 430, arg) == Action::Choose);
@@ -97,38 +97,38 @@ static void testFlow() {
     e = onBoot(st, true, 8);
     CHECK(st.screen == Screen::Board && e.kind == Effect::FetchBoard);
 
-    // Header tap -> direction -> into city -> lookup
-    step(st, Action::OpenDirection, 0);
-    CHECK(st.screen == Screen::Direction);
-    e = step(st, Action::Back, 0);
-    CHECK(st.screen == Screen::Board && e.kind == Effect::None);
+    // Direction button on the board: goes to loading, then straight back to the board
+    // showing the nearest stop that way (row 0), no separate direction screen
+    e = step(st, Action::PickOut, 0);
+    CHECK(st.screen == Screen::Loading && e.kind == Effect::Lookup && e.dir == StopDirection::Out);
+    e = onLookup(st, true, 6);
+    CHECK(st.screen == Screen::Board && e.kind == Effect::ShowStop && e.index == 0);
+    CHECK(st.dir == StopDirection::Out && st.stopCount == 6);
 
-    step(st, Action::OpenDirection, 0);
-    e = step(st, Action::PickInto, 0);
-    CHECK(st.screen == Screen::Loading && e.kind == Effect::Lookup && e.dir == StopDirection::Into);
-
-    // Lookup succeeds -> stop list; pick row 2 -> board shows that stop
+    // Header tap opens the stop list for the current direction
+    e = step(st, Action::OpenStopList, 0);
+    CHECK(st.screen == Screen::Loading && e.kind == Effect::Lookup && e.dir == StopDirection::Out);
     e = onLookup(st, true, 5);
-    CHECK(st.screen == Screen::StopList && st.stopCount == 5);
+    CHECK(st.screen == Screen::StopList && st.stopCount == 5 && e.kind == Effect::None);
+
+    // Pick row 2 -> board shows that stop
     e = step(st, Action::PickStop, 2);
     CHECK(st.screen == Screen::Board && e.kind == Effect::ShowStop && e.index == 2);
 
-    // Stop list Back goes to direction; Back again goes to the board it came from
-    step(st, Action::OpenDirection, 0);
-    step(st, Action::PickOut, 0);
+    // Stop list Back returns to the board it came from
+    step(st, Action::OpenStopList, 0);
     onLookup(st, true, 4);
-    step(st, Action::Back, 0);
-    CHECK(st.screen == Screen::Direction);
+    CHECK(st.screen == Screen::StopList);
     step(st, Action::Back, 0);
     CHECK(st.screen == Screen::Board);
 
-    // Lookup that finds no stops, or fails, shows the error with a reason
-    step(st, Action::OpenDirection, 0);
-    step(st, Action::PickInto, 0);
+    // Into button, then a lookup that finds no stops: error with a reason
+    e = step(st, Action::PickInto, 0);
+    CHECK(st.dir == StopDirection::Into);
     onLookup(st, true, 0);
     CHECK(st.screen == Screen::Error && st.reason == ErrorReason::NoStops);
     e = step(st, Action::Retry, 0);                  // NoStops: retry does the lookup again
-    CHECK(st.screen == Screen::Loading && e.kind == Effect::Lookup);
+    CHECK(st.screen == Screen::Loading && e.kind == Effect::Lookup && e.dir == StopDirection::Into);
     onLookup(st, false, 0);
     CHECK(st.screen == Screen::Error && st.reason == ErrorReason::NoNetwork);
 
@@ -144,37 +144,46 @@ static void testFlow() {
     e = onBoard(st, BoardStatus::NetworkError);
     CHECK(st.screen == Screen::Error && st.reason == ErrorReason::NoNetwork);
 
-    // Choose from an error opens direction; Back returns to the error
-    step(st, Action::Choose, 0);
-    CHECK(st.screen == Screen::Direction);
+    // Choose from an error opens the stop list; Back returns to the error
+    e = step(st, Action::Choose, 0);
+    CHECK(st.screen == Screen::Loading && e.kind == Effect::Lookup);
+    onLookup(st, true, 3);
+    CHECK(st.screen == Screen::StopList);
     step(st, Action::Back, 0);
     CHECK(st.screen == Screen::Error);
 
     // Idle on the board sleeps; any touch wakes to the board and fetches once.
-    // Idle on a menu does nothing (the menu stays up).
+    // Idle on the stop list does nothing (the list stays up).
     onBoard(st, BoardStatus::Ok);
     e = onIdle(st);
     CHECK(st.screen == Screen::Asleep && e.kind == Effect::Sleep);
     e = step(st, Action::Wake, 0);
     CHECK(st.screen == Screen::Board && e.kind == Effect::FetchBoard);
 
-    step(st, Action::OpenDirection, 0);
+    step(st, Action::OpenStopList, 0);
+    onLookup(st, true, 3);
     e = onIdle(st);
-    CHECK(st.screen == Screen::Direction && e.kind == Effect::None);
+    CHECK(st.screen == Screen::StopList && e.kind == Effect::None);
 
-    // Minute refresh on the board fetches; while a menu is open it does nothing
+    // Minute refresh on the board fetches; while the list is open it does nothing
     step(st, Action::Back, 0);
     e = onMinute(st);
     CHECK(e.kind == Effect::FetchBoard);
-    step(st, Action::OpenDirection, 0);
+    step(st, Action::OpenStopList, 0);
+    onLookup(st, true, 3);
     e = onMinute(st);
     CHECK(e.kind == Effect::None);
 
     // A tap that is not on a button does nothing
     UiState s2;
-    s2.screen = Screen::Direction;
+    s2.screen = Screen::StopList;
+    s2.stopCount = 3;
     e = step(s2, Action::None, 0);
-    CHECK(s2.screen == Screen::Direction && e.kind == Effect::None);
+    CHECK(s2.screen == Screen::StopList && e.kind == Effect::None);
+
+    // A stop row beyond the list does nothing
+    e = step(s2, Action::PickStop, 5);
+    CHECK(s2.screen == Screen::StopList && e.kind == Effect::None);
 
     // Startup with no stops goes to an error, and Retry looks up nearest stops
     UiState s3;
