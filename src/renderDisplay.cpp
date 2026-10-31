@@ -5,8 +5,8 @@
 
 extern "C" {
 #ifdef BUSTRACKER_HW
-    #include "../C/lib/Config/DEV_Config.h"
-    #include "../C/lib/lcd/st7796.h"
+    #include "../third_party/waveshare/Config/DEV_Config.h"
+    #include "../third_party/waveshare/lcd/st7796.h"
     void st7796_set_windows(uint16_t x_start, uint16_t y_start, uint16_t x_end, uint16_t y_end);
 #endif
 }

@@ -1,7 +1,5 @@
 # Installing the bus display service
 
-Nothing here is installed yet. Run these steps on the Pi when you are ready.
-
 ## 1. Settings file
 
 `~/.config/bustracker/env` must contain at least:
@@ -11,11 +9,11 @@ Nothing here is installed yet. Run these steps on the Pi when you are ready.
 
 Keep it private: `chmod 600 ~/.config/bustracker/env`. The service reads it
 through `EnvironmentFile=`, and the key is never printed by the program.
-See `C++ files/config.example.env` for the other variables.
+See `src/config.example.env` for the other variables.
 
 ## 2. Build and install the program
 
-    cd ~/agents/<build folder>/"C++ files"      # or a fresh checkout
+    cd ~/agents/<build folder>/src              # or a fresh checkout
     make && make test                             # the tests need no network
     sudo install -m 755 busTrack /usr/local/bin/busTrack
 

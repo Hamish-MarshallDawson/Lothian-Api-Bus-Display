@@ -1,5 +1,5 @@
 // direction_test.cpp: checks the timetable direction vote and the timetable parsers
-// with hand-made fixtures. No network. Run from "C++ files/": make test
+// with hand-made fixtures. No network. Run from "src/": make test
 //
 // Test stops lie on one line running into the city centre (settings.h):
 //   TESTW1  -3.24 lon,  about 3.2 km from the centre

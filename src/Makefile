@@ -1,7 +1,7 @@
 # Makefile for the Lothian bus display
 
 # Directories
-DIR_C_LIB = ../C/lib
+DIR_C_LIB = ../third_party/waveshare
 DIR_LCD = $(DIR_C_LIB)/lcd
 DIR_CONFIG = $(DIR_C_LIB)/Config
 DIR_GFX = ../gfx

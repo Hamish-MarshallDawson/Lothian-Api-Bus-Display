@@ -4,11 +4,8 @@
 *.a
 *.so
 *.out
-C++ files/busTrack
-C++ files/openmappull
-C/bin/
-C/main
-archive/displayTest
+src/busTrack
+src/openmappull
 build/
 bin/
 obj/
