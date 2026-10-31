@@ -8,6 +8,7 @@
 #include <curl/curl.h>
 
 #include "apiHttp.h"
+#include "diskcache.h"
 #include "settings.h"
 
 using json = nlohmann::json;
@@ -59,25 +60,46 @@ std::vector<std::vector<std::string>> parseTripStops(const json &doc) {
     return out;
 }
 
-// Drop cache entries from other days, so the map stays small
-template <typename Map>
-static void keepOnlyDay(Map &m, const std::string &date) {
-    const std::string suffix = "|" + date;
-    for (auto it = m.begin(); it != m.end();) {
-        if (it->first.size() < suffix.size()
-            || it->first.compare(it->first.size() - suffix.size(), suffix.size(), suffix) != 0) {
-            it = m.erase(it);
-        } else {
-            ++it;
-        }
+// ---------------------------------------------------------------------------
+// Day stores: one JSON object per kind per day, kept in memory and on disk
+// (~/.cache/bustracker/<kind>-<date>.json). Yesterday's file is deleted when
+// today's is first used.
+
+static json &dayStore(const std::string &kind, const std::string &date) {
+    static std::map<std::string, json> stores;  // key kind|date
+    const std::string key = kind + "|" + date;
+    auto it = stores.find(key);
+    if (it != stores.end()) return it->second;
+
+    // Drop the in-memory store for any other day of this kind
+    for (auto i = stores.begin(); i != stores.end();) {
+        if (i->first.compare(0, kind.size() + 1, kind + "|") == 0) i = stores.erase(i);
+        else ++i;
     }
+
+    const std::string file = kind + "-" + date + ".json";
+    json j;
+    if (!diskcache::load(file, j) || !j.is_object()) j = json::object();
+    diskcache::pruneOthers(kind + "-", file);
+    return stores[key] = j;
 }
 
+static void saveDayStore(const std::string &kind, const std::string &date) {
+    diskcache::save(kind + "-" + date + ".json", dayStore(kind, date));
+}
+
+// ---------------------------------------------------------------------------
+
 bool stopServicesFor(const std::string &atco, const std::string &date, std::vector<ServiceRef> &out) {
-    static std::map<std::string, std::vector<ServiceRef>> cache;  // key: atco|date
-    const std::string key = atco + "|" + date;
-    auto hit = cache.find(key);
-    if (hit != cache.end()) { out = hit->second; return true; }
+    json &store = dayStore("services", date);
+    auto hit = store.find(atco);
+    if (hit != store.end() && hit->is_array()) {
+        out.clear();
+        for (const auto &s : *hit) {
+            out.push_back(ServiceRef{jstr(s, "publicservicename"), jstr(s, "operator")});
+        }
+        return true;
+    }
 
     std::string url = API_BASE() + "/services/GetStopServices?atcoCode=" + urlEncode(atco)
                     + "&fromDate=" + date + "&toDate=" + date;
@@ -90,16 +112,22 @@ bool stopServicesFor(const std::string &atco, const std::string &date, std::vect
         std::cerr << "GetStopServices parse error: " << e.what() << std::endl;
         return false;
     }
-    keepOnlyDay(cache, date);
-    cache[key] = out;
+    json arr = json::array();
+    for (const auto &s : out) arr.push_back({{"publicservicename", s.publicservicename}, {"operator", s.opCode}});
+    store[atco] = arr;
+    saveDayStore("services", date);
     return true;
 }
 
 bool tripsFor(const ServiceRef &svc, const std::string &date, std::vector<std::vector<std::string>> &out) {
-    static std::map<std::string, std::vector<std::vector<std::string>>> cache;  // key: name|op|date
-    const std::string key = svc.publicservicename + "|" + svc.opCode + "|" + date;
-    auto hit = cache.find(key);
-    if (hit != cache.end()) { out = hit->second; return true; }
+    json &store = dayStore("trips", date);
+    const std::string key = svc.publicservicename + "|" + svc.opCode;
+    auto hit = store.find(key);
+    if (hit != store.end() && hit->is_array()) {
+        out.clear();
+        for (const auto &t : *hit) out.push_back(t.get<std::vector<std::string>>());
+        return true;
+    }
 
     std::string url = API_BASE() + "/timetables/GetServiceTimetable?publicservicename="
                     + urlEncode(svc.publicservicename) + "&operator=" + urlEncode(svc.opCode)
@@ -113,7 +141,7 @@ bool tripsFor(const ServiceRef &svc, const std::string &date, std::vector<std::v
         std::cerr << "GetServiceTimetable parse error: " << e.what() << std::endl;
         return false;
     }
-    keepOnlyDay(cache, date);
-    cache[key] = out;
+    store[key] = json(out);
+    saveDayStore("trips", date);
     return true;
 }

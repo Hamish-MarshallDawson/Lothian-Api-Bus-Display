@@ -17,7 +17,8 @@ struct Departure {
     int minutes = 0;          // whole minutes from the board's fetchedAt; <0 = already due
     bool live = false;        // true when a real-time prediction was used
     bool cancelled = false;
-    bool delayed = false;
+    bool delayed = false;     // the API said "delayed", or live is 2+ min after schedule
+    int lateMin = 0;          // live minus scheduled, whole minutes; 0 with no live time
     int seatCount = -1;       // -1 when the API did not say
     std::string seatLevel;    // "None", "Low", "Medium", "High" or "" if unknown
 };

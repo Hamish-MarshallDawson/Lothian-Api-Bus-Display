@@ -26,7 +26,7 @@ C_SOURCES = $(HW_SOURCES)
 GFX_SOURCES = $(DIR_GFX)/canvas.cpp $(DIR_GFX)/text.cpp $(DIR_GFX)/widgets.cpp
 
 # Library code shared by busTrack and the tests
-LIB_SOURCES = departures.cpp timetables.cpp direction.cpp openmappull.cpp refresh.cpp \
+LIB_SOURCES = departures.cpp timetables.cpp direction.cpp diskcache.cpp openmappull.cpp refresh.cpp \
               png_write.cpp renderDisplay.cpp screens.cpp screens_draw.cpp $(GFX_SOURCES)
 CPP_SOURCES = busTrack.cpp $(LIB_SOURCES)
 
@@ -51,10 +51,10 @@ $(TARGET): $(C_SOURCES:.c=.o) $(CPP_SOURCES:.cpp=.o)
 tests/refresh_test: tests/refresh_test.o refresh.o departures.o
 	$(CXX) $^ -o $@ -lcurl -lm
 
-tests/direction_test: tests/direction_test.o direction.o timetables.o
+tests/direction_test: tests/direction_test.o direction.o timetables.o diskcache.o
 	$(CXX) $^ -o $@ -lcurl -lm
 
-tests/live_format_test: tests/live_format_test.o departures.o timetables.o
+tests/live_format_test: tests/live_format_test.o departures.o timetables.o diskcache.o
 	$(CXX) $^ -o $@ -lcurl -lm
 
 # Screen state, transitions and touch hit areas (screens.cpp, no drawing)
